@@ -12,6 +12,8 @@ public:
 
   void run() override;
 
+  std::array<double, 4> results = {0.0, 0.0, 0.0, 0.0};
+
   // Listener interface to notify editor when alignment is done
   struct Listener {
     virtual ~Listener() = default;

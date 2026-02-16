@@ -16,8 +16,11 @@ public:
                         bool rowIsSelected) override;
   void listBoxItemClicked(int row, const juce::MouseEvent &) override;
   void listBoxItemDoubleClicked(int row, const juce::MouseEvent &) override;
+  juce::var
+  getDragSourceDescription(const juce::SparseSet<int> &selectedRows) override;
 
   std::function<void(juce::File)> onLoadIR;
+  std::function<void(juce::File, int)> onLoadIRToSlot;
 
 private:
   // Data

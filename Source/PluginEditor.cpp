@@ -48,6 +48,16 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
       if (s)
         s->updateSlotDisplay();
   };
+
+  browser.onLoadIRToSlot = [this](juce::File f, int slotIndex) {
+    if (slotIndex >= 0 && slotIndex < 4) {
+      proc.getIRSlot(slotIndex).loadImpulseResponse(f);
+      if (slotComponents[slotIndex])
+        slotComponents[slotIndex]->updateSlotDisplay();
+      refreshWaveform();
+    }
+  };
+
   addAndMakeVisible(browser);
 
   // Title
@@ -55,6 +65,13 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
   titleLabel.setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(titleLabel);
+
+  // Subtitle
+  subtitleLabel.setFont(juce::Font(15.0f));
+  subtitleLabel.setColour(juce::Label::textColourId,
+                          juce::Colours::white.withAlpha(0.6f));
+  subtitleLabel.setJustificationType(juce::Justification::centredLeft);
+  addAndMakeVisible(subtitleLabel);
 
   // Settings Button
   settingsButton.setButtonText("Settings");
@@ -107,7 +124,11 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
     isAutoAlignOn = autoAlignButton.getToggleState();
     updateAutoAlignState();
     if (isAutoAlignOn) {
+      proc.cacheManualDelays();
       proc.getAutoAligner().performAlignment();
+    } else {
+      proc.revertAutoAlignment();
+      refreshWaveform();
     }
   };
   addAndMakeVisible(autoAlignButton);
@@ -230,7 +251,9 @@ void FreeIREditor::resized() {
   };
 
   // 1. Header (Full Width)
-  titleLabel.setBounds(mapRect(24, 12, 200, 60));
+  // 1. Header (Full Width)
+  titleLabel.setBounds(mapRect(24, 14, 200, 40));
+  subtitleLabel.setBounds(mapRect(26, 50, 200, 20));
 
   // Settings Button in top right
   settingsButton.setBounds(mapRect(980, 24, 80, 24));
@@ -339,7 +362,10 @@ void FreeIREditor::timerCallback() {
   // anything else
 }
 
-void FreeIREditor::alignmentComplete() { refreshWaveform(); }
+void FreeIREditor::alignmentComplete() {
+  proc.applyAlignmentResults();
+  refreshWaveform();
+}
 
 //==============================================================================
 void FreeIREditor::refreshWaveform() {

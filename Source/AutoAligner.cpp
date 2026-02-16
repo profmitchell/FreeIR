@@ -32,7 +32,7 @@ void AutoAligner::run() {
   double refSR = slots[refIndex].getIRSampleRate();
 
   // Reset reference delay to 0
-  slots[refIndex].setAlignmentDelay(0.0);
+  results[refIndex] = 0.0;
 
   // 2. For each other loaded slot, compute cross-correlation offset
   for (int i = 0; i < 4; ++i) {
@@ -41,17 +41,16 @@ void AutoAligner::run() {
 
     if (i == refIndex || !slots[i].isLoaded()) {
       if (i != refIndex)
-        slots[i].setAlignmentDelay(0.0);
+        results[i] = 0.0;
       continue;
     }
 
     const auto &targetIR = slots[i].getIRBuffer();
     double targetSR = slots[i].getIRSampleRate();
 
-    // Use the lower sample rate for safety; IRs should be at the same rate
-    // but we use ref SR as canonical
+    // Use the lower sample rate for safety
     double offset = findDelayOffset(refIR, targetIR, refSR);
-    slots[i].setAlignmentDelay(offset);
+    results[i] = offset;
   }
 
   // 3. Notify listeners on message thread

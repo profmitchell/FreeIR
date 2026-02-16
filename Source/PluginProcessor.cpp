@@ -178,7 +178,8 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile) {
   // settings (alignment, level, pan, EQ) and writes the result as a WAV file.
 
   double sampleRate = exportSampleRate;
-  int lengthSamples = 8192; // Default length
+  // Increase length to ~2 seconds to capture full tail and delay
+  int lengthSamples = (int)(sampleRate * 2.0);
 
   int blockSize = 512;
   juce::dsp::ProcessSpec renderSpec;
@@ -360,4 +361,36 @@ void FreeIRAudioProcessor::setStateInformation(const void *data,
 //==============================================================================
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter() {
   return new FreeIRAudioProcessor();
+}
+//==============================================================================
+void FreeIRAudioProcessor::cacheManualDelays() {
+  for (int i = 0; i < 4; ++i) {
+    auto *param = apvts.getParameter("Slot" + juce::String(i + 1) + "_DelayMs");
+    if (param)
+      slots[i].manualDelayMs = param->convertFrom0to1(param->getValue());
+  }
+}
+
+void FreeIRAudioProcessor::applyAlignmentResults() {
+  auto results = autoAligner.results;
+  for (int i = 0; i < 4; ++i) {
+    auto *param = apvts.getParameter("Slot" + juce::String(i + 1) + "_DelayMs");
+    if (param) {
+      if (auto *p = dynamic_cast<juce::AudioParameterFloat *>(param)) {
+        p->setValueNotifyingHost(p->convertTo0to1((float)results[i]));
+      }
+    }
+  }
+}
+
+void FreeIRAudioProcessor::revertAutoAlignment() {
+  for (int i = 0; i < 4; ++i) {
+    auto *param = apvts.getParameter("Slot" + juce::String(i + 1) + "_DelayMs");
+    if (param) {
+      if (auto *p = dynamic_cast<juce::AudioParameterFloat *>(param)) {
+        p->setValueNotifyingHost(
+            p->convertTo0to1((float)slots[i].manualDelayMs));
+      }
+    }
+  }
 }

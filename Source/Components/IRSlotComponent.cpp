@@ -214,3 +214,24 @@ void IRSlotComponent::setDelayEnabled(bool enabled) {
   delayKnob.setEnabled(enabled);
   delayKnob.setAlpha(enabled ? 1.0f : 0.5f);
 }
+
+bool IRSlotComponent::isInterestedInDragSource(
+    const juce::DragAndDropTarget::SourceDetails &dragSourceDetails) {
+  return dragSourceDetails.description.isArray();
+}
+
+void IRSlotComponent::itemDropped(
+    const juce::DragAndDropTarget::SourceDetails &dragSourceDetails) {
+  if (dragSourceDetails.description.isArray()) {
+    auto files = dragSourceDetails.description;
+    if (files.size() > 0) {
+      juce::File file(files[0].toString());
+      if (file.existsAsFile()) {
+        proc.getIRSlot(slotID).loadImpulseResponse(file);
+        updateSlotDisplay();
+        if (onSlotChanged)
+          onSlotChanged();
+      }
+    }
+  }
+}

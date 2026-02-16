@@ -61,6 +61,11 @@ public:
   bool exportMono = true;
   double exportSampleRate = 48000.0;
 
+  // Auto Align Helpers
+  void cacheManualDelays();
+  void applyAlignmentResults();
+  void revertAutoAlignment();
+
 private:
   juce::AudioProcessorValueTreeState apvts;
   juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

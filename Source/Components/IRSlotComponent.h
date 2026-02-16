@@ -6,10 +6,15 @@
 //==============================================================================
 // IRSlotComponent: UI strip for a single IR slot
 //==============================================================================
-class IRSlotComponent : public juce::Component {
+class IRSlotComponent : public juce::Component, public juce::DragAndDropTarget {
 public:
   IRSlotComponent(FreeIRAudioProcessor &processor, int slotIndex);
   ~IRSlotComponent() override;
+
+  // DragAndDropTarget methods
+  bool
+  isInterestedInDragSource(const SourceDetails &dragSourceDetails) override;
+  void itemDropped(const SourceDetails &dragSourceDetails) override;
 
   void resized() override;
   void paint(juce::Graphics &g) override;

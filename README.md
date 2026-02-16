@@ -1,39 +1,19 @@
 # FreeIR
 
-A free, open-source impulse response mixer plugin for music production. Load up to 4 IRs, blend them with independent level/pan/delay controls, auto-align phase, shape with a built-in EQ, and export the result as a single WAV.
-
-![FreeIR Screenshot](Screenshot%202026-02-16%20at%204.57.09%20PM.png)
+FreeIR is a high-performance, open-source Impulse Response (IR) loader plugin and standalone application.
 
 ## Features
-
-- **4-Slot IR Mixer** — Load `.wav` / `.aif` impulse responses into 4 independent slots
-- **Per-Slot Controls** — Level fader, pan knob, delay knob, solo & mute
-- **Auto Align** — One-click cross-correlation alignment to phase-lock your IRs
-- **IR Waveform Viewer** — Overlaid waveform display with per-slot color coding
-- **6-Band EQ** — Lo Cut, Hi Cut, Bass, Mid (Gain/Freq/Q), Treble, Air, Output
-- **Header Tone Knobs** — Quick-access Bass, Treble, Air, and Volume
-- **IR Export** — Bounce the mixed result to a single `.wav` file
-- **Full Preset Support** — Save and recall all settings via DAW session state
-
-## Building
-
-### Prerequisites
-
-- [JUCE](https://juce.com/) v7+ (place or symlink at `../JUCE` relative to this project, or adjust `CMakeLists.txt`)
-- CMake 3.22+
-- C++17 compiler (Xcode / Clang on macOS)
-
-### Build Steps
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release -j
-```
-
-The built plugin will be automatically installed to your system plugin folders:
-- **VST3**: `~/Library/Audio/Plug-Ins/VST3/`
-- **AU**: `~/Library/Audio/Plug-Ins/Components/`
+- **4 IR Slots**: Mix and match up to 4 impulse responses with individual controls.
+- **Auto Align**: Automatically phase-aligns IRs for maximum coherence.
+- **Browser**: Integrated IR browser with favorites and playlists.
+- **Export**: Export your mixed IRs to a single WAV file (Mono/Stereo, 44.1-96kHz).
+- **Zero Latency**: Optimised for real-time performance.
 
 ## License
+Copyright (c) 2026 CohenConcepts.
 
-MIT
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

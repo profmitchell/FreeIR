@@ -84,6 +84,7 @@ IRBrowserComponent::IRBrowserComponent() : sidebarModel(*this) {
   fileList.setRowHeight(20);
   fileList.setColour(juce::ListBox::backgroundColourId,
                      juce::Colour(0x1affffff));
+  fileList.setMultipleSelectionEnabled(true);
   addAndMakeVisible(fileList);
 
   // Defaults
@@ -140,6 +141,19 @@ void IRBrowserComponent::resized() {
 // Main File List
 int IRBrowserComponent::getNumRows() { return (int)currentFileList.size(); }
 
+juce::var IRBrowserComponent::getDragSourceDescription(
+    const juce::SparseSet<int> &selectedRows) {
+  juce::Array<juce::var> files;
+  for (int i = 0; i < selectedRows.size(); ++i) {
+    if (isPositiveAndBelow(selectedRows[i], currentFileList.size())) {
+      auto file = currentFileList[selectedRows[i]];
+      if (file.existsAsFile())
+        files.add(file.getFullPathName());
+    }
+  }
+  return files;
+}
+
 void IRBrowserComponent::paintListBoxItem(int row, juce::Graphics &g, int width,
                                           int height, bool rowIsSelected) {
   if (rowIsSelected) {
@@ -162,9 +176,28 @@ void IRBrowserComponent::listBoxItemClicked(int row,
     if (row >= 0 && row < currentFileList.size()) {
       juce::PopupMenu m;
       m.addItem(1, "Add to Playlist");
+      m.addSeparator();
+      m.addItem(2, "Load into Slot A");
+      m.addItem(3, "Load into Slot B");
+      m.addItem(4, "Load into Slot C");
+      m.addItem(5, "Load into Slot D");
+
       m.showMenuAsync(juce::PopupMenu::Options(), [this, row](int id) {
-        if (id == 1)
-          addToPlaylist(currentFileList[row]);
+        if (id == 1) {
+          auto selected = fileList.getSelectedRows();
+          if (selected.size() > 0) {
+            for (int i = 0; i < selected.size(); ++i) {
+              if (isPositiveAndBelow(selected[i], currentFileList.size()))
+                addToPlaylist(currentFileList[selected[i]]);
+            }
+          } else {
+            addToPlaylist(currentFileList[row]);
+          }
+        } else if (id >= 2 && id <= 5) {
+          int slotIdx = id - 2;
+          if (onLoadIRToSlot)
+            onLoadIRToSlot(currentFileList[row], slotIdx);
+        }
       });
     }
   }

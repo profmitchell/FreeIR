@@ -29,6 +29,7 @@ private:
 
   // Header controls
   juce::Label titleLabel{{}, "FreeIR"};
+  juce::Label subtitleLabel{{}, "Cohen Concepts"};
   juce::Slider bassHeaderKnob, trebleHeaderKnob, airHeaderKnob, volumeKnob;
   juce::Label bassHeaderLabel{{}, "Bass"};
   juce::Label trebleHeaderLabel{{}, "Treble"};

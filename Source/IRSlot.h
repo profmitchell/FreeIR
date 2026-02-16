@@ -25,7 +25,8 @@ public:
   double getIRSampleRate() const { return irSampleRate; }
 
   void setAlignmentDelay(double delayMs);
-  double getAlignmentDelay() const;
+  double getAlignmentDelay() const; // For Auto-Align internal
+  double manualDelayMs = 0.0;       // Saved manual delay for toggling
 
   // Navigation
   void loadNextIR();
