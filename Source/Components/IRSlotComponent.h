@@ -6,7 +6,7 @@
 //==============================================================================
 // IRSlotComponent: UI strip for a single IR slot
 //==============================================================================
-class IRSlotComponent : public juce::Component {
+class IRSlotComponent : public juce::Component, public juce::Slider::Listener {
 public:
   IRSlotComponent(FreeIRAudioProcessor &processor, int slotIndex);
   ~IRSlotComponent() override;
@@ -14,6 +14,11 @@ public:
   void resized() override;
   void paint(juce::Graphics &g) override;
   void updateSlotDisplay();
+
+  void setDelayEnabled(bool enabled);
+
+  // Slider::Listener — fires when delay knob moves
+  void sliderValueChanged(juce::Slider *slider) override;
 
   // Callback for parent to refresh waveform/IR list
   std::function<void()> onSlotChanged;

@@ -31,43 +31,51 @@ void WaveformDisplay::timerCallback() {
 void WaveformDisplay::paint(juce::Graphics &g) {
   auto bounds = getLocalBounds().toFloat();
 
-  // Background
-  g.setColour(juce::Colour(0xff111111));
-  g.fillRoundedRectangle(bounds, 4.0f);
+  // Glass panel background
+  g.setColour(juce::Colour(0x0affffff));
+  g.fillRoundedRectangle(bounds, 8.0f);
 
-  // Border
-  g.setColour(juce::Colour(0xff333333));
-  g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+  // Border (subtle glass edge)
+  g.setColour(juce::Colour(0x1affffff));
+  g.drawRoundedRectangle(bounds, 8.0f, 1.0f);
 
-  float pad = 8.0f;
+  float pad = 12.0f;
   auto plotArea = bounds.reduced(pad);
 
-  // Grid lines and time labels
-  g.setColour(juce::Colour(0xff333333));
-  for (int i = 0; i <= 4; ++i) {
-    float x = plotArea.getX() + plotArea.getWidth() * (float)i / 4.0f;
+  // Inner dark tracking area
+  g.setColour(juce::Colour(0xff050505));
+  g.fillRoundedRectangle(plotArea, 4.0f);
+  g.setColour(juce::Colour(0x1affffff));
+  g.drawRoundedRectangle(plotArea, 4.0f, 1.0f);
+
+  // Grid lines
+  g.setColour(juce::Colour(0x0dffffff));
+  int numDivs = 8;
+  for (int i = 1; i < numDivs; ++i) {
+    float x = plotArea.getX() + plotArea.getWidth() * (float)i / (float)numDivs;
     g.drawVerticalLine((int)x, plotArea.getY(), plotArea.getBottom());
   }
 
-  // Time labels
-  g.setColour(juce::Colour(0xff888888));
-  g.setFont(11.0f);
-  g.drawText("0ms", (int)plotArea.getX() - 10, (int)plotArea.getBottom() + 2,
-             40, 14, juce::Justification::centred);
-  g.drawText("2.5ms", (int)(plotArea.getX() + plotArea.getWidth() * 0.5f) - 20,
-             (int)plotArea.getBottom() + 2, 50, 14,
-             juce::Justification::centred);
-  g.drawText("5ms", (int)(plotArea.getRight()) - 20,
-             (int)plotArea.getBottom() + 2, 40, 14,
-             juce::Justification::centred);
+  // Time labels (subtle)
+  g.setColour(juce::Colour(0xff666666));
+  g.setFont(juce::Font(10.0f));
+
+  // 0ms
+  g.drawText("0ms", (int)plotArea.getX() + 4, (int)plotArea.getBottom() - 14,
+             40, 14, juce::Justification::left);
+  // End (5ms)
+  g.drawText("5ms", (int)plotArea.getRight() - 44,
+             (int)plotArea.getBottom() - 14, 40, 14,
+             juce::Justification::right);
 
   // Zero line
   float zeroY = plotArea.getCentreY();
-  g.setColour(juce::Colour(0xff2a2a2a));
+  g.setColour(juce::Colour(0x26ffffff));
   g.drawHorizontalLine((int)zeroY, plotArea.getX(), plotArea.getRight());
 
   // Draw each slot waveform
-  for (int s = 0; s < 4; ++s) {
+  // Draw in reverse order so Slot 1 is on top
+  for (int s = 3; s >= 0; --s) {
     if (!slotData[s].valid || slotData[s].buffer == nullptr)
       continue;
 
@@ -84,16 +92,15 @@ void WaveformDisplay::paint(juce::Graphics &g) {
     juce::Path waveform;
     bool started = false;
 
+    // Optimize: step by 1 pixel
     for (int px = 0; px < (int)plotArea.getWidth(); ++px) {
-      // Map pixel to sample index
-      double t = (double)px / (double)plotArea.getWidth(); // 0..1 across 5ms
+      double t = (double)px / (double)plotArea.getWidth();
       int sampleIdx = (int)(t * (double)displaySamples) - offsetSamples;
 
       float value = 0.0f;
       if (sampleIdx >= 0 && sampleIdx < buf.getNumSamples())
-        value = buf.getSample(0, sampleIdx); // Use channel 0
+        value = buf.getSample(0, sampleIdx);
 
-      // Clamp for display
       value = juce::jlimit(-1.0f, 1.0f, value);
 
       float xPos = plotArea.getX() + (float)px;
@@ -108,6 +115,14 @@ void WaveformDisplay::paint(juce::Graphics &g) {
     }
 
     g.setColour(slotColours[s]);
-    g.strokePath(waveform, juce::PathStrokeType(1.5f));
+    g.strokePath(waveform, juce::PathStrokeType(1.0f));
+
+    // Fill with very low opacity for body
+    juce::Path fillPath = waveform;
+    fillPath.lineTo(plotArea.getRight(), zeroY);
+    fillPath.lineTo(plotArea.getX(), zeroY);
+    fillPath.closeSubPath();
+    g.setColour(slotColours[s].withAlpha(0.1f));
+    g.fillPath(fillPath);
   }
 }

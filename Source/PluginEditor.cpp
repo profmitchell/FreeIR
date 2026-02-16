@@ -4,15 +4,20 @@
 FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
     : AudioProcessorEditor(&p), proc(p), eqSection(p) {
   setLookAndFeel(&lnf);
-  setResizable(false, false);
+
+  // Responsive / Resizable setup
+  setResizable(true, true);
+  constrainer.setFixedAspectRatio((double)defaultWidth / (double)defaultHeight);
+  constrainer.setMinimumSize(550, 360);
+  setConstrainer(&constrainer);
 
   // Title
-  titleLabel.setFont(juce::Font(28.0f, juce::Font::bold));
+  titleLabel.setFont(juce::Font(32.0f, juce::Font::plain));
   titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
   titleLabel.setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(titleLabel);
 
-  // Header knobs: Bass, Treble, Air, Volume
+  // Header knobs
   setupHeaderKnob(bassHeaderKnob, bassHeaderLabel, "BassGainDb",
                   bassHeaderAttach, 0.0);
   setupHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, "TrebleGainDb",
@@ -31,15 +36,15 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
     addAndMakeVisible(*slotComponents[i]);
   }
 
-  // IR list buttons (styled as text, click to load)
+  // IR list buttons (pill styled)
   for (int i = 0; i < 4; ++i) {
     irListButtons[i] = std::make_unique<juce::TextButton>();
     irListButtons[i]->setColour(juce::TextButton::buttonColourId,
-                                juce::Colours::transparentBlack);
+                                juce::Colour(0x0affffff));
     irListButtons[i]->setColour(juce::TextButton::buttonOnColourId,
-                                juce::Colour(0x22ffffff));
+                                juce::Colour(0x1affffff));
     irListButtons[i]->setColour(juce::TextButton::textColourOffId,
-                                juce::Colour(0xff666666));
+                                juce::Colour(0xff888888));
     irListButtons[i]->setColour(juce::TextButton::textColourOnId,
                                 juce::Colours::white);
 
@@ -53,14 +58,18 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
 
   // Waveform
   addAndMakeVisible(waveformDisplay);
-  refreshWaveform();
 
-  // Auto Align button
+  // Auto Align button (Toggle)
+  autoAlignButton.setClickingTogglesState(true);
   autoAlignButton.onClick = [this]() {
-    proc.getAutoAligner().performAlignment();
+    isAutoAlignOn = autoAlignButton.getToggleState();
+    updateAutoAlignState();
+    if (isAutoAlignOn) {
+      proc.getAutoAligner().performAlignment();
+      // The alignment sets the delay parameters, which updates the knobs,
+      // which updates the waveform via callback.
+    }
   };
-  autoAlignButton.setColour(juce::TextButton::buttonColourId,
-                            juce::Colour(0xff2a2a2a));
   addAndMakeVisible(autoAlignButton);
 
   // Export button
@@ -82,12 +91,7 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
 
             bool success = proc.exportMixedIR(file, 48000.0, 8192);
 
-            if (success) {
-              juce::AlertWindow::showMessageBoxAsync(
-                  juce::MessageBoxIconType::InfoIcon, "Export Complete",
-                  "Mixed IR exported successfully to:\n" +
-                      file.getFullPathName());
-            } else {
+            if (!success) {
               juce::AlertWindow::showMessageBoxAsync(
                   juce::MessageBoxIconType::WarningIcon, "Export Failed",
                   "Could not write the IR file.");
@@ -95,21 +99,27 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
           }
         });
   };
+  // Green tint for export
   exportButton.setColour(juce::TextButton::buttonColourId,
-                         juce::Colour(0xff2a4a2a));
+                         juce::Colour(0x15228822));
+  exportButton.setColour(juce::TextButton::buttonOnColourId,
+                         juce::Colour(0x3344aa44));
+
   addAndMakeVisible(exportButton);
 
   // EQ Section
   addAndMakeVisible(eqSection);
 
-  // Register for auto-align callbacks
+  // Register for auto-align callbacks & init
   proc.getAutoAligner().addListener(this);
+  updateAutoAlignState(); // Init state
 
   startTimerHz(15);
 
-  // IMPORTANT: setSize must be LAST — it triggers resized() which needs all
-  // components to exist
-  setSize(1100, 720);
+  // Initial waveform refresh deferred to timer or after layout
+  refreshWaveform();
+
+  setSize(defaultWidth, defaultHeight);
 }
 
 FreeIREditor::~FreeIREditor() {
@@ -129,9 +139,9 @@ void FreeIREditor::setupHeaderKnob(
   knob.setPopupDisplayEnabled(true, true, this);
   addAndMakeVisible(knob);
 
-  label.setFont(juce::Font(11.0f));
+  label.setFont(juce::Font(10.0f, juce::Font::bold));
   label.setJustificationType(juce::Justification::centred);
-  label.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
+  label.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
   addAndMakeVisible(label);
 
   attach =
@@ -139,127 +149,133 @@ void FreeIREditor::setupHeaderKnob(
           proc.getAPVTS(), paramID, knob);
 }
 
+void FreeIREditor::updateAutoAlignState() {
+  if (isAutoAlignOn) {
+    // Cyan glow when ON
+    autoAlignButton.setColour(juce::TextButton::buttonColourId,
+                              juce::Colour(0x3300ccff));
+    autoAlignButton.setColour(juce::TextButton::buttonOnColourId,
+                              juce::Colour(0x6600ccff));
+    autoAlignButton.setColour(juce::TextButton::textColourOnId,
+                              juce::Colours::white);
+
+    // Disable delay knobs
+    for (auto &slot : slotComponents)
+      if (slot)
+        slot->setDelayEnabled(false);
+
+  } else {
+    // Dim / Standard when OFF
+    autoAlignButton.setColour(juce::TextButton::buttonColourId,
+                              juce::Colour(0x1affffff));
+    autoAlignButton.setColour(juce::TextButton::buttonOnColourId,
+                              juce::Colour(0x33ffffff));
+
+    // Enable delay knobs
+    for (auto &slot : slotComponents)
+      if (slot)
+        slot->setDelayEnabled(true);
+  }
+}
+
 //==============================================================================
 void FreeIREditor::paint(juce::Graphics &g) {
-  // Background: dark brushed metal gradient
-  juce::ColourGradient bgGrad(juce::Colour(0xff1a1a1a), 0, 0,
-                              juce::Colour(0xff0e0e0e), 0, (float)getHeight(),
+  // ShadCN Dark Glass Background
+  juce::ColourGradient bgGrad(juce::Colour(0xff000000), 0, 0,
+                              juce::Colour(0xff121212), 0, (float)getHeight(),
                               false);
   g.setGradientFill(bgGrad);
   g.fillAll();
 
-  // Subtle noise texture overlay (deterministic for consistency)
-  juce::Random rng(42);
-  g.setColour(juce::Colour(0x08ffffff));
-  for (int i = 0; i < 3000; ++i) {
+  // Subtle Noise
+  juce::Random rng(999);
+  g.setColour(juce::Colour(0x06ffffff));
+  for (int i = 0; i < 4000; ++i) {
     float nx = rng.nextFloat() * (float)getWidth();
     float ny = rng.nextFloat() * (float)getHeight();
     g.fillRect(nx, ny, 1.0f, 1.0f);
   }
-
-  // Header bar background
-  g.setColour(juce::Colour(0xff222222));
-  g.fillRect(0, 0, getWidth(), 80);
-
-  // Separator line below header
-  g.setColour(juce::Colour(0xff444444));
-  g.drawHorizontalLine(80, 0, (float)getWidth());
-
-  // Separator between slot area and right panel
-  int slotAreaRight = 4 * 120 + 20;
-  g.setColour(juce::Colour(0xff333333));
-  g.drawVerticalLine(slotAreaRight, 80, (float)getHeight() - 100);
 }
 
 //==============================================================================
 void FreeIREditor::resized() {
-  auto bounds = getLocalBounds();
+  // Map rectangles from 1100x720 design space to current bounds
+  auto mapRect = [&](int x, int y, int w, int h) -> juce::Rectangle<int> {
+    float sx = (float)getWidth() / 1100.0f;
+    float sy = (float)getHeight() / 720.0f;
+    return juce::Rectangle<float>(x * sx, y * sy, w * sx, h * sy)
+        .toNearestInt();
+  };
 
-  // ===== HEADER (top 80px) =====
-  auto header = bounds.removeFromTop(80).reduced(10, 10);
+  // HEADER BAR (Background drawn in Paint? No, let's just layout components)
+  // We'll draw the header panel bg in paint if needed, or just let components
+  // float. Ideally, paint() should use the same scaling logic for the
+  // header-bg. But for now, let's keep it simple.
 
-  titleLabel.setBounds(header.removeFromLeft(180));
+  // Title
+  titleLabel.setBounds(mapRect(24, 12, 200, 60));
 
-  // Volume on far right
-  auto volumeArea = header.removeFromRight(70);
-  volumeKnob.setBounds(
-      volumeArea.removeFromTop(46).withSizeKeepingCentre(46, 46));
-  volumeLabel.setBounds(volumeArea);
+  // Header Knobs (Center)
+  int knobSize = 46;
+  int spacing = 80;
+  // Center X = 550. Total width = 3 * 80 = 240. Start X = 430.
+  int startX = 430;
+  int knobY = 18;
 
-  header.removeFromRight(20);
+  auto layoutHeaderKnob = [&](juce::Slider &k, juce::Label &l, int x) {
+    k.setBounds(mapRect(x, knobY, knobSize, knobSize));
+    l.setBounds(mapRect(x, knobY + 46, knobSize, 14));
+  };
 
-  // Bass, Treble, Air knobs centered
-  int hKnobSize = 46;
-  int hKnobSpacing = 80;
-  int totalHeaderKnobs = 3 * hKnobSpacing;
-  auto headerKnobArea =
-      header.withSizeKeepingCentre(totalHeaderKnobs, header.getHeight());
+  layoutHeaderKnob(bassHeaderKnob, bassHeaderLabel, startX);
+  layoutHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, startX + spacing);
+  layoutHeaderKnob(airHeaderKnob, airHeaderLabel, startX + spacing * 2);
 
-  auto bassArea = headerKnobArea.removeFromLeft(hKnobSpacing);
-  bassHeaderKnob.setBounds(
-      bassArea.removeFromTop(hKnobSize).withSizeKeepingCentre(hKnobSize,
-                                                              hKnobSize));
-  bassHeaderLabel.setBounds(bassArea);
+  // Volume (Right)
+  layoutHeaderKnob(volumeKnob, volumeLabel, 1100 - 80);
 
-  auto trebleArea = headerKnobArea.removeFromLeft(hKnobSpacing);
-  trebleHeaderKnob.setBounds(
-      trebleArea.removeFromTop(hKnobSize).withSizeKeepingCentre(hKnobSize,
-                                                                hKnobSize));
-  trebleHeaderLabel.setBounds(trebleArea);
+  // EQ SECTIO (Bottom)
+  eqSection.setBounds(mapRect(12, 608, 1076, 100));
 
-  auto airArea = headerKnobArea.removeFromLeft(hKnobSpacing);
-  airHeaderKnob.setBounds(
-      airArea.removeFromTop(hKnobSize).withSizeKeepingCentre(hKnobSize,
-                                                             hKnobSize));
-  airHeaderLabel.setBounds(airArea);
+  // SLOTS (Left)
+  int slotW = 120;
+  int startY = 100;
+  int slotH = 490; // Height between header and EQ
 
-  // ===== EQ SECTION (bottom 100px) =====
-  auto eqArea = bounds.removeFromBottom(100).reduced(10, 5);
-  eqSection.setBounds(eqArea);
-
-  // ===== MAIN BODY =====
-  auto body = bounds.reduced(10, 5);
-
-  // Left: 4 slot strips
-  int slotWidth = 120;
-  auto slotsArea = body.removeFromLeft(slotWidth * 4);
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 4; ++i) {
     slotComponents[i]->setBounds(
-        slotsArea.removeFromLeft(slotWidth).reduced(2));
+        mapRect(24 + (i * slotW), startY, slotW - 8, slotH));
+  }
 
-  body.removeFromLeft(10);
+  // RIGHT PANEL (IR List, Waveform, Buttons)
+  int rightPanelX = 24 + (4 * slotW) + 12;   // ~516
+  int rightPanelW = 1100 - rightPanelX - 24; // ~560
+  int curY = startY;
 
-  // Right panel: IR list, waveform, buttons
-  auto rightPanel = body;
+  // IR List Buttons
+  int btnH = 28;
+  for (int i = 0; i < 4; ++i) {
+    irListButtons[i]->setBounds(mapRect(rightPanelX, curY, rightPanelW, btnH));
+    curY += 34;
+  }
 
-  // IR List (top ~120px)
-  auto irListArea = rightPanel.removeFromTop(120);
-  int labelH = 28;
-  for (int i = 0; i < 4; ++i)
-    irListButtons[i]->setBounds(irListArea.removeFromTop(labelH));
+  curY += 12;
 
-  rightPanel.removeFromTop(5);
+  // Waveform
+  int waveH = 250;
+  waveformDisplay.setBounds(mapRect(rightPanelX, curY, rightPanelW, waveH));
+  curY += waveH + 16;
 
-  // Waveform display
-  auto waveArea = rightPanel.removeFromTop(rightPanel.getHeight() - 40);
-  waveformDisplay.setBounds(waveArea);
-
-  rightPanel.removeFromTop(5);
-
-  // Auto Align + Export buttons
-  auto buttonsRow = rightPanel;
-  autoAlignButton.setBounds(
-      buttonsRow.removeFromLeft(buttonsRow.getWidth() / 2).reduced(2));
-  exportButton.setBounds(buttonsRow.reduced(2));
+  // Buttons
+  int btnW = (rightPanelW - 12) / 2;
+  autoAlignButton.setBounds(mapRect(rightPanelX, curY, btnW, 32));
+  exportButton.setBounds(mapRect(rightPanelX + btnW + 12, curY, btnW, 32));
 }
 
 //==============================================================================
 void FreeIREditor::timerCallback() { refreshIRList(); }
 
-void FreeIREditor::alignmentComplete() {
-  refreshWaveform();
-  repaint();
-}
+void FreeIREditor::alignmentComplete() { refreshWaveform(); }
 
 //==============================================================================
 void FreeIREditor::refreshIRList() {
@@ -271,10 +287,15 @@ void FreeIREditor::refreshIRList() {
       text += slot.getSlotName();
       irListButtons[i]->setColour(juce::TextButton::textColourOffId,
                                   juce::Colours::white);
+      // Bright glass when loaded
+      irListButtons[i]->setColour(juce::TextButton::buttonColourId,
+                                  juce::Colour(0x1affffff));
     } else {
-      text += "Click to load impulse response...";
+      text += "Empty (Click to Load)";
       irListButtons[i]->setColour(juce::TextButton::textColourOffId,
                                   juce::Colour(0xff666666));
+      irListButtons[i]->setColour(juce::TextButton::buttonColourId,
+                                  juce::Colour(0x0affffff));
     }
 
     if (irListButtons[i]->getButtonText() != text)
@@ -285,9 +306,25 @@ void FreeIREditor::refreshIRList() {
 void FreeIREditor::refreshWaveform() {
   for (int i = 0; i < 4; ++i) {
     auto &slot = proc.getIRSlot(i);
+
+    // Read the delay parameter converted to 0..1 then map to ms?
+    // No, APVTS parameters are float.
+    // But we need the actual value in milliseconds.
+    float currentDelayMs = 0.0f;
+    auto *param =
+        proc.getAPVTS().getParameter("Slot" + juce::String(i + 1) + "_DelayMs");
+    if (param) {
+      // getParameter returns 0..1 normalized usually if using
+      // AudioProcessorParameter::getValue() But convertFrom0to1 gives real
+      // value. Actually `getAPVTS().getRawParameterValue` returns the float
+      // *value* directly (atomic).
+      currentDelayMs = *proc.getAPVTS().getRawParameterValue(
+          "Slot" + juce::String(i + 1) + "_DelayMs");
+    }
+
     if (slot.isLoaded())
       waveformDisplay.setIRData(i, &slot.getIRBuffer(), slot.getIRSampleRate(),
-                                slot.getAlignmentDelay());
+                                (double)currentDelayMs);
     else
       waveformDisplay.clearSlot(i);
   }
@@ -308,7 +345,8 @@ void FreeIREditor::loadIRForSlot(int slotIndex) {
                            proc.getIRSlot(slotIndex).loadImpulseResponse(file);
                            refreshIRList();
                            refreshWaveform();
-                           slotComponents[slotIndex]->updateSlotDisplay();
+                           if (slotComponents[slotIndex])
+                             slotComponents[slotIndex]->updateSlotDisplay();
                          }
                        });
 }

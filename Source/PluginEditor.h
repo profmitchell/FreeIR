@@ -52,8 +52,9 @@ private:
   // Waveform display
   WaveformDisplay waveformDisplay;
 
-  // Auto Align button
+  // Auto Align toggle button (changed from text button)
   juce::TextButton autoAlignButton{"Auto Align"};
+  bool isAutoAlignOn = false;
 
   // Export button
   juce::TextButton exportButton{"Export IR"};
@@ -61,9 +62,15 @@ private:
   // EQ Section
   EQSectionComponent eqSection;
 
+  // Responsive resizing constrainer
+  juce::ComponentBoundsConstrainer constrainer;
+  static constexpr int defaultWidth = 1100;
+  static constexpr int defaultHeight = 720;
+
   // Helpers
   void refreshIRList();
   void refreshWaveform();
+  void updateAutoAlignState();
   void loadIRForSlot(int slotIndex);
 
   void setupHeaderKnob(

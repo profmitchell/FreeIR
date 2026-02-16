@@ -26,9 +26,9 @@ void EQSectionComponent::setupKnob(
   knob.setPopupDisplayEnabled(true, true, this);
   addAndMakeVisible(knob);
 
-  label.setFont(juce::Font(11.0f));
+  label.setFont(juce::Font(10.0f, juce::Font::bold));
   label.setJustificationType(juce::Justification::centred);
-  label.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
+  label.setColour(juce::Label::textColourId, juce::Colour(0xff888888));
   addAndMakeVisible(label);
 
   attach =
@@ -39,35 +39,38 @@ void EQSectionComponent::setupKnob(
 void EQSectionComponent::paint(juce::Graphics &g) {
   auto bounds = getLocalBounds().toFloat();
 
-  // Subtle background
-  g.setColour(juce::Colour(0xff181818));
-  g.fillRoundedRectangle(bounds, 4.0f);
+  // Glass panel background
+  g.setColour(juce::Colour(0x0affffff));
+  g.fillRoundedRectangle(bounds, 8.0f);
+  g.setColour(juce::Colour(0x1affffff));
+  g.drawRoundedRectangle(bounds, 8.0f, 1.0f);
 
-  // Mid group box
-  // The reference shows a boxed "Mid" section containing Gain, Freq, Q
+  // Mid group box styling
   auto midGroupX = bounds.getWidth() * (4.0f / 9.0f);
   auto midGroupW = bounds.getWidth() * (3.0f / 9.0f);
-  auto midGroupRect = juce::Rectangle<float>(midGroupX - 4, 0, midGroupW + 8,
-                                             bounds.getHeight());
+  auto midGroupRect = juce::Rectangle<float>(midGroupX + 4, 4, midGroupW - 8,
+                                             bounds.getHeight() - 8);
 
-  g.setColour(juce::Colour(0xff252525));
-  g.fillRoundedRectangle(midGroupRect, 4.0f);
-  g.setColour(juce::Colour(0xff444444));
-  g.drawRoundedRectangle(midGroupRect, 4.0f, 1.0f);
+  // Inner glass card for Mids
+  g.setColour(juce::Colour(0x08ffffff));
+  g.fillRoundedRectangle(midGroupRect, 6.0f);
+  g.setColour(juce::Colour(0x15ffffff));
+  g.drawRoundedRectangle(midGroupRect, 6.0f, 1.0f);
 
-  // "Mid" label at top of group
-  g.setColour(juce::Colour(0xffaaaaaa));
-  g.setFont(juce::Font(12.0f, juce::Font::bold));
-  g.drawText("Mid", midGroupRect.removeFromTop(16),
-             juce::Justification::centred);
+  // "Mid" Label
+  g.setColour(juce::Colour(0xff666666));
+  g.setFont(juce::Font(10.0f, juce::Font::bold));
+  g.drawText("MIDS", midGroupRect.getX(), midGroupRect.getY() + 4,
+             midGroupRect.getWidth(), 12, juce::Justification::centred);
 }
 
 void EQSectionComponent::resized() {
-  auto area = getLocalBounds().reduced(4);
+  auto area = getLocalBounds().reduced(8);
+
   int numKnobs = 9;
-  int knobW = area.getWidth() / numKnobs;
-  int knobSize = juce::jmin(knobW - 4, area.getHeight() - 22);
-  int labelH = 18;
+  auto knobW = (float)area.getWidth() / (float)numKnobs;
+  int labelH = 14;
+  int knobSize = juce::jmin((int)knobW - 4, area.getHeight() - labelH - 4);
 
   struct KnobInfo {
     juce::Slider *knob;
@@ -83,11 +86,29 @@ void EQSectionComponent::resized() {
       {&trebleKnob, &trebleLabel},   {&outputKnob, &outputLabel},
   };
 
-  for (int i = 0; i < numKnobs; ++i) {
-    auto col = area.removeFromLeft(knobW);
-    auto knobArea = col.removeFromTop(col.getHeight() - labelH);
-    knobs[i].knob->setBounds(
-        knobArea.withSizeKeepingCentre(knobSize, knobSize));
-    knobs[i].label->setBounds(col);
+  // Re-layout knobs
+  // Knobs 0-3 (Left)
+  for (int i = 0; i < 4; ++i) {
+    auto r = area.removeFromLeft((int)knobW);
+    auto kR = r.removeFromTop(r.getHeight() - labelH);
+    knobs[i].knob->setBounds(kR.withSizeKeepingCentre(knobSize, knobSize));
+    knobs[i].label->setBounds(r);
+  }
+
+  // Mids 4-6 (Middle - ensure they are centered in the box)
+  for (int i = 4; i <= 6; ++i) {
+    auto r = area.removeFromLeft((int)knobW);
+    r.removeFromTop(12); // Push down for "MIDS" label
+    auto kR = r.removeFromTop(r.getHeight() - labelH);
+    knobs[i].knob->setBounds(kR.withSizeKeepingCentre(knobSize, knobSize));
+    knobs[i].label->setBounds(r);
+  }
+
+  // Knobs 7-8 (Right)
+  for (int i = 7; i < 9; ++i) {
+    auto r = area.removeFromLeft((int)knobW);
+    auto kR = r.removeFromTop(r.getHeight() - labelH);
+    knobs[i].knob->setBounds(kR.withSizeKeepingCentre(knobSize, knobSize));
+    knobs[i].label->setBounds(r);
   }
 }
