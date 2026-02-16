@@ -1,0 +1,35 @@
+# Build output
+build/
+cmake-build-*/
+
+# JUCE framework (external dependency)
+JUCE/
+
+# IDE / OS
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.xcworkspace
+*.xcuserdata
+xcuserdata/
+
+# CMake cache
+.cache/
+CMakeFiles/
+CMakeCache.txt
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.so
+
+# Plugin binaries
+*.vst3
+*.component
+*.aax
