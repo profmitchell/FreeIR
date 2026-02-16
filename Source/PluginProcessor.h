@@ -5,8 +5,15 @@
 #include "IRSlot.h"
 #include <JuceHeader.h>
 
+//==============================================================================
 class FreeIRAudioProcessor : public juce::AudioProcessor {
 public:
+  enum class ExportSampleRate {
+    SR_44100 = 44100,
+    SR_48000 = 48000,
+    SR_88200 = 88200,
+    SR_96000 = 96000
+  };
   FreeIRAudioProcessor();
   ~FreeIRAudioProcessor() override;
 
@@ -48,9 +55,11 @@ public:
   static constexpr int numSlots = 4;
 
   // Export mixed IR to a WAV file
-  bool exportMixedIR(const juce::File &outputFile,
-                     double exportSampleRate = 48000.0,
-                     int exportLengthSamples = 4096);
+  bool exportMixedIR(const juce::File &outputFile);
+
+  // Settings
+  bool exportMono = true;
+  double exportSampleRate = 48000.0;
 
 private:
   juce::AudioProcessorValueTreeState apvts;

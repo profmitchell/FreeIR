@@ -2,6 +2,7 @@
 
 #include "AutoAligner.h"
 #include "Components/EQSectionComponent.h"
+#include "Components/IRBrowserComponent.h"
 #include "Components/IRSlotComponent.h"
 #include "Components/WaveformDisplay.h"
 #include "FreeIRLookAndFeel.h"
@@ -46,8 +47,8 @@ private:
   // 4 Slot strips
   std::array<std::unique_ptr<IRSlotComponent>, 4> slotComponents;
 
-  // IR List area (clickable buttons styled as text)
-  std::array<std::unique_ptr<juce::TextButton>, 4> irListButtons;
+  // Browser Panel
+  IRBrowserComponent browser;
 
   // Waveform display
   WaveformDisplay waveformDisplay;
@@ -56,7 +57,8 @@ private:
   juce::TextButton autoAlignButton{"Auto Align"};
   bool isAutoAlignOn = false;
 
-  // Export button
+  // Settings & Export
+  juce::TextButton settingsButton{"Settings"};
   juce::TextButton exportButton{"Export IR"};
 
   // EQ Section

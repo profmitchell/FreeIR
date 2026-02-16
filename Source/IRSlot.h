@@ -24,8 +24,12 @@ public:
   const juce::AudioBuffer<float> &getIRBuffer() const { return irBuffer; }
   double getIRSampleRate() const { return irSampleRate; }
 
-  void setAlignmentDelay(double ms);
-  double getAlignmentDelay() const { return alignmentDelayMs; }
+  void setAlignmentDelay(double delayMs);
+  double getAlignmentDelay() const;
+
+  // Navigation
+  void loadNextIR();
+  void loadPrevIR();
 
   bool isMuted() const;
   bool isSoloed() const;

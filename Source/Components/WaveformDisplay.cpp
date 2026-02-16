@@ -75,6 +75,14 @@ void WaveformDisplay::paint(juce::Graphics &g) {
 
   // Draw each slot waveform
   // Draw in reverse order so Slot 1 is on top
+  // Monochrome shades
+  const juce::Colour slotShades[4] = {
+      juce::Colour(0xffffffff), // Pure White
+      juce::Colour(0xddeeeeee), // Slightly dimmed
+      juce::Colour(0xbbcccccc), // Grey
+      juce::Colour(0x99aaaaaa)  // Darker Grey
+  };
+
   for (int s = 3; s >= 0; --s) {
     if (!slotData[s].valid || slotData[s].buffer == nullptr)
       continue;
@@ -114,7 +122,7 @@ void WaveformDisplay::paint(juce::Graphics &g) {
       }
     }
 
-    g.setColour(slotColours[s]);
+    g.setColour(slotShades[s]);
     g.strokePath(waveform, juce::PathStrokeType(1.0f));
 
     // Fill with very low opacity for body
@@ -122,7 +130,7 @@ void WaveformDisplay::paint(juce::Graphics &g) {
     fillPath.lineTo(plotArea.getRight(), zeroY);
     fillPath.lineTo(plotArea.getX(), zeroY);
     fillPath.closeSubPath();
-    g.setColour(slotColours[s].withAlpha(0.1f));
+    g.setColour(slotShades[s].withAlpha(0.1f));
     g.fillPath(fillPath);
   }
 }

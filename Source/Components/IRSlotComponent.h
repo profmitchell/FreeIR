@@ -6,7 +6,7 @@
 //==============================================================================
 // IRSlotComponent: UI strip for a single IR slot
 //==============================================================================
-class IRSlotComponent : public juce::Component, public juce::Slider::Listener {
+class IRSlotComponent : public juce::Component {
 public:
   IRSlotComponent(FreeIRAudioProcessor &processor, int slotIndex);
   ~IRSlotComponent() override;
@@ -18,7 +18,7 @@ public:
   void setDelayEnabled(bool enabled);
 
   // Slider::Listener — fires when delay knob moves
-  void sliderValueChanged(juce::Slider *slider) override;
+  // Slider::Listener removed
 
   // Callback for parent to refresh waveform/IR list
   std::function<void()> onSlotChanged;
@@ -27,34 +27,37 @@ private:
   FreeIRAudioProcessor &proc;
   int slotID;
 
-  juce::TextButton soloButton{"S"};
-  juce::TextButton muteButton{"M"};
+  // UI Components
+  juce::TextButton prevButton{"<"};
+  juce::TextButton nextButton{">"};
+  juce::TextButton loadButton; // Displays IR Name
   juce::TextButton clearButton;
 
-  juce::Slider panKnob;
   juce::Slider delayKnob;
-  juce::Slider levelFader;
-
-  juce::Label panLabel{{}, "Pan"};
-  juce::Label delayLabel{{}, "Delay"};
-  juce::Label levelLabel{{}, "Level"};
-  juce::Label slotNumLabel;
-
-  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
-      panAttach;
+  juce::Label delayLabel;
   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
       delayAttach;
+
+  juce::Slider panKnob;
+  juce::Label panLabel;
   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
-      levelAttach;
-  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
-      soloAttach;
+      panAttach;
+
+  // Fader & Mute/Solo
+  juce::Slider fader;
+  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
+      faderAttach;
+
+  juce::TextButton muteButton{"M"};
+  juce::TextButton soloButton{"S"};
+
   std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
       muteAttach;
+  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
+      soloAttach;
 
-  // Slot colours
-  const std::array<juce::Colour, 4> slotColours = {
-      juce::Colour(0xffff4444), juce::Colour(0xff44ff44),
-      juce::Colour(0xff4488ff), juce::Colour(0xffcc44ff)};
+  juce::Label slotNumLabel;
+  juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IRSlotComponent)
 };

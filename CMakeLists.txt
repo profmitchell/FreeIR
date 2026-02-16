@@ -25,7 +25,7 @@ juce_add_plugin(FreeIR
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE "CoCo"
     PLUGIN_CODE "FrIr"
-    FORMATS AU VST3
+    FORMATS AU VST3 Standalone
     PRODUCT_NAME "FreeIR"
 )
 
@@ -46,6 +46,8 @@ target_sources(FreeIR
         Source/AutoAligner.h
         Source/Components/IRSlotComponent.cpp
         Source/Components/IRSlotComponent.h
+        Source/Components/IRBrowserComponent.cpp
+        Source/Components/IRBrowserComponent.h
         Source/Components/WaveformDisplay.cpp
         Source/Components/WaveformDisplay.h
         Source/Components/EQSectionComponent.cpp

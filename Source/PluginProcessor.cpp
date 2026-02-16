@@ -173,29 +173,31 @@ void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   buffer.applyGain(outGain);
 }
 
-//==============================================================================
-bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
-                                         double exportSampleRate,
-                                         int exportLengthSamples) {
+bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile) {
   // Renders a single impulse through all loaded/enabled slots with current
   // settings (alignment, level, pan, EQ) and writes the result as a WAV file.
 
-  juce::dsp::ProcessSpec spec;
-  spec.sampleRate = exportSampleRate;
-  spec.maximumBlockSize = (juce::uint32)exportLengthSamples;
-  spec.numChannels = 2;
+  double sampleRate = exportSampleRate;
+  int lengthSamples = 8192; // Default length
 
-  // Create temporary copies of slots and EQ for offline rendering
-  // Actually, we'll just use a temporary buffer approach:
-  // Create an impulse (dirac delta), process it through the plugin chain
+  int blockSize = 512;
+  juce::dsp::ProcessSpec renderSpec;
+  renderSpec.sampleRate = sampleRate;
+  renderSpec.maximumBlockSize = (juce::uint32)blockSize;
+  renderSpec.numChannels = 2; // Internal processing is stereo
 
-  // Step 1: Create impulse input
-  juce::AudioBuffer<float> impulseInput(2, exportLengthSamples);
+  // Prepare input: Dirac delta
+  juce::AudioBuffer<float> impulseInput(2, lengthSamples);
   impulseInput.clear();
-  impulseInput.setSample(0, 0, 1.0f); // Dirac delta L
-  impulseInput.setSample(1, 0, 1.0f); // Dirac delta R
+  impulseInput.setSample(0, 0, 1.0f);
+  impulseInput.setSample(1, 0, 1.0f);
 
-  // Step 2: Process through slots with current settings
+  // Buffer for the mixed result
+  juce::AudioBuffer<float> exportMix(2, lengthSamples);
+  exportMix.clear();
+
+  // Create temporary copies of slots for offline rendering
+  // We need to re-create the whole chain to process offline safely
   bool anySoloed = false;
   for (int i = 0; i < numSlots; ++i) {
     if (slots[i].isLoaded() && slots[i].isSoloed()) {
@@ -204,24 +206,7 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
     }
   }
 
-  juce::AudioBuffer<float> exportMix(2, exportLengthSamples);
-  exportMix.clear();
-
-  // We need to process the impulse through each slot's convolution.
-  // Since the convolution engine processes in blocks, we need to run enough
-  // blocks to capture the full IR tail.
-
-  // Prepare temporary processing
-  int blockSize = 512;
-  juce::dsp::ProcessSpec renderSpec;
-  renderSpec.sampleRate = exportSampleRate;
-  renderSpec.maximumBlockSize = (juce::uint32)blockSize;
-  renderSpec.numChannels = 2;
-
-  // We'll process the impulse input in blocks
-  int totalBlocks = (exportLengthSamples + blockSize - 1) / blockSize;
-
-  // Prepare temp slots for export
+  // Prepare temp slots
   std::array<IRSlot, numSlots> exportSlots;
   for (int i = 0; i < numSlots; ++i) {
     exportSlots[i].init(i, &apvts);
@@ -232,15 +217,18 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
     }
   }
 
+  // Temp EQ
   EQProcessor exportEQ(apvts);
   exportEQ.prepare(renderSpec);
 
+  // Process in blocks
+  int totalBlocks = (lengthSamples + blockSize - 1) / blockSize;
+
   for (int block = 0; block < totalBlocks; ++block) {
     int startSample = block * blockSize;
-    int samplesThisBlock =
-        juce::jmin(blockSize, exportLengthSamples - startSample);
+    int samplesThisBlock = juce::jmin(blockSize, lengthSamples - startSample);
 
-    // Create input block (impulse only in first block)
+    // Input block (impulse only in first block)
     juce::AudioBuffer<float> inputBlock(2, samplesThisBlock);
     inputBlock.clear();
 
@@ -253,10 +241,13 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
     juce::AudioBuffer<float> blockMix(2, samplesThisBlock);
     blockMix.clear();
 
+    // Process slots
     for (int i = 0; i < numSlots; ++i) {
       if (!exportSlots[i].isLoaded())
         continue;
       if (anySoloed && !exportSlots[i].isSoloed())
+        continue;
+      if (!anySoloed && exportSlots[i].isMuted())
         continue;
 
       exportSlots[i].process(inputBlock, blockMix);
@@ -266,8 +257,8 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
     exportEQ.process(blockMix);
 
     // Apply output gain
-    float outGainDb = apvts.getRawParameterValue("OutputGainDb")->load();
-    float outGain = juce::Decibels::decibelsToGain(outGainDb, -60.0f);
+    float outGainDb = *apvts.getRawParameterValue("OutputGainDb");
+    float outGain = juce::Decibels::decibelsToGain(outGainDb);
     blockMix.applyGain(outGain);
 
     // Copy to export buffer
@@ -275,7 +266,15 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
       exportMix.copyFrom(ch, startSample, blockMix, ch, 0, samplesThisBlock);
   }
 
-  // Step 3: Write to WAV
+  // Apply Mono if requested
+  int numOutputChannels = exportMono ? 1 : 2;
+  if (exportMono) {
+    // Sum Stereo to Mono (L+R)/2
+    exportMix.addFrom(0, 0, exportMix, 1, 0, lengthSamples);
+    exportMix.applyGain(0, 0, lengthSamples, 0.5f);
+  }
+
+  // Write to WAV
   outputFile.deleteFile();
   std::unique_ptr<juce::FileOutputStream> fileStream(
       outputFile.createOutputStream());
@@ -284,14 +283,14 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile,
 
   juce::WavAudioFormat wavFormat;
   std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
-      fileStream.get(), exportSampleRate, 2, 24, {}, 0));
+      fileStream.get(), sampleRate, numOutputChannels, 24, {}, 0));
 
   if (writer == nullptr)
     return false;
 
   fileStream.release(); // writer takes ownership
+  writer->writeFromAudioSampleBuffer(exportMix, 0, lengthSamples);
 
-  writer->writeFromAudioSampleBuffer(exportMix, 0, exportLengthSamples);
   return true;
 }
 

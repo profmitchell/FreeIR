@@ -8,14 +8,79 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   // Responsive / Resizable setup
   setResizable(true, true);
   constrainer.setFixedAspectRatio((double)defaultWidth / (double)defaultHeight);
-  constrainer.setMinimumSize(550, 360);
+  constrainer.setMinimumSize(800, 500);
   setConstrainer(&constrainer);
+
+  // Browser
+  browser.onLoadIR = [this](juce::File f) {
+    // Logic to load into *currently selected* slot?
+    // Or just load into Slot 1 by default?
+    // User didn't specify selection logic.
+    // But the Slots have their own "Load" buttons now.
+    // So the browser is mostly for management/drag?
+    // "when selected display IRs... and ability to load them".
+    // Let's assume double click loads into the *first empty* slot or Slot 1 if
+    // full? Or maybe we need a "Selected Slot" concept in the Editor? For now,
+    // let's load into Slot 1 for simplicity or just perform a callback?
+    // Actually, standard behavior: Drag and Drop.
+    // Double click could replace Slot 1.
+    if (proc.getIRSlot(0).isLoaded()) {
+      // Find first empty?
+      for (int i = 0; i < 4; ++i) {
+        if (!proc.getIRSlot(i).isLoaded()) {
+          proc.getIRSlot(i).loadImpulseResponse(f);
+          // notify slot
+          return;
+        }
+      }
+      // All full, replace slot 1
+      proc.getIRSlot(0).loadImpulseResponse(f);
+    } else {
+      proc.getIRSlot(0).loadImpulseResponse(f);
+    }
+    refreshWaveform();
+    // Slots need update? They update on timer/paint usually or we call
+    // updateSlotDisplay? We don't have direct access to updateSlotDisplay
+    // easily for all unless we expose it. But slots poll? No, we called
+    // updateSlotDisplay manually in load. We should really have a listener
+    // mechanism. Dirty fix: iterate slots and update.
+    for (auto &s : slotComponents)
+      if (s)
+        s->updateSlotDisplay();
+  };
+  addAndMakeVisible(browser);
 
   // Title
   titleLabel.setFont(juce::Font(32.0f, juce::Font::plain));
   titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
   titleLabel.setJustificationType(juce::Justification::centredLeft);
   addAndMakeVisible(titleLabel);
+
+  // Settings Button
+  settingsButton.setButtonText("Settings");
+  settingsButton.onClick = [this] {
+    juce::PopupMenu m;
+    m.addSectionHeader("Export Settings");
+
+    m.addItem("Export Mono", true, proc.exportMono,
+              [this] { proc.exportMono = !proc.exportMono; });
+
+    juce::PopupMenu srMenu;
+    srMenu.addItem("44.1 kHz", true, proc.exportSampleRate == 44100.0,
+                   [this] { proc.exportSampleRate = 44100.0; });
+    srMenu.addItem("48 kHz", true, proc.exportSampleRate == 48000.0,
+                   [this] { proc.exportSampleRate = 48000.0; });
+    srMenu.addItem("88.2 kHz", true, proc.exportSampleRate == 88200.0,
+                   [this] { proc.exportSampleRate = 88200.0; });
+    srMenu.addItem("96 kHz", true, proc.exportSampleRate == 96000.0,
+                   [this] { proc.exportSampleRate = 96000.0; });
+
+    m.addSubMenu("Export Sample Rate", srMenu);
+
+    m.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(settingsButton));
+  };
+  addAndMakeVisible(settingsButton);
 
   // Header knobs
   setupHeaderKnob(bassHeaderKnob, bassHeaderLabel, "BassGainDb",
@@ -29,48 +94,24 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   // 4 Slot strips
   for (int i = 0; i < 4; ++i) {
     slotComponents[i] = std::make_unique<IRSlotComponent>(proc, i);
-    slotComponents[i]->onSlotChanged = [this]() {
-      refreshIRList();
-      refreshWaveform();
-    };
+    slotComponents[i]->onSlotChanged = [this]() { refreshWaveform(); };
     addAndMakeVisible(*slotComponents[i]);
   }
-
-  // IR list buttons (pill styled)
-  for (int i = 0; i < 4; ++i) {
-    irListButtons[i] = std::make_unique<juce::TextButton>();
-    irListButtons[i]->setColour(juce::TextButton::buttonColourId,
-                                juce::Colour(0x0affffff));
-    irListButtons[i]->setColour(juce::TextButton::buttonOnColourId,
-                                juce::Colour(0x1affffff));
-    irListButtons[i]->setColour(juce::TextButton::textColourOffId,
-                                juce::Colour(0xff888888));
-    irListButtons[i]->setColour(juce::TextButton::textColourOnId,
-                                juce::Colours::white);
-
-    int slotIdx = i;
-    irListButtons[i]->onClick = [this, slotIdx]() { loadIRForSlot(slotIdx); };
-
-    addAndMakeVisible(*irListButtons[i]);
-  }
-
-  refreshIRList();
 
   // Waveform
   addAndMakeVisible(waveformDisplay);
 
-  // Auto Align button (Toggle)
+  // Auto Align button
   autoAlignButton.setClickingTogglesState(true);
   autoAlignButton.onClick = [this]() {
     isAutoAlignOn = autoAlignButton.getToggleState();
     updateAutoAlignState();
     if (isAutoAlignOn) {
       proc.getAutoAligner().performAlignment();
-      // The alignment sets the delay parameters, which updates the knobs,
-      // which updates the waveform via callback.
     }
   };
   addAndMakeVisible(autoAlignButton);
+  updateAutoAlignState();
 
   // Export button
   exportButton.onClick = [this]() {
@@ -80,26 +121,19 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
             .getChildFile("FreeIR_Export.wav"),
         "*.wav");
 
-    chooser->launchAsync(
-        juce::FileBrowserComponent::saveMode |
-            juce::FileBrowserComponent::canSelectFiles,
-        [this, chooser](const juce::FileChooser &fc) {
-          auto file = fc.getResult();
-          if (file != juce::File()) {
-            if (!file.hasFileExtension("wav"))
-              file = file.withFileExtension("wav");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode |
+                             juce::FileBrowserComponent::canSelectFiles,
+                         [this, chooser](const juce::FileChooser &fc) {
+                           auto file = fc.getResult();
+                           if (file != juce::File()) {
+                             if (!file.hasFileExtension("wav"))
+                               file = file.withFileExtension("wav");
 
-            bool success = proc.exportMixedIR(file, 48000.0, 8192);
-
-            if (!success) {
-              juce::AlertWindow::showMessageBoxAsync(
-                  juce::MessageBoxIconType::WarningIcon, "Export Failed",
-                  "Could not write the IR file.");
-            }
-          }
-        });
+                             proc.exportMixedIR(
+                                 file); // No args, uses internal settings
+                           }
+                         });
   };
-  // Green tint for export
   exportButton.setColour(juce::TextButton::buttonColourId,
                          juce::Colour(0x15228822));
   exportButton.setColour(juce::TextButton::buttonOnColourId,
@@ -112,13 +146,9 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
 
   // Register for auto-align callbacks & init
   proc.getAutoAligner().addListener(this);
-  updateAutoAlignState(); // Init state
 
   startTimerHz(15);
-
-  // Initial waveform refresh deferred to timer or after layout
   refreshWaveform();
-
   setSize(defaultWidth, defaultHeight);
 }
 
@@ -151,27 +181,20 @@ void FreeIREditor::setupHeaderKnob(
 
 void FreeIREditor::updateAutoAlignState() {
   if (isAutoAlignOn) {
-    // Cyan glow when ON
     autoAlignButton.setColour(juce::TextButton::buttonColourId,
                               juce::Colour(0x3300ccff));
     autoAlignButton.setColour(juce::TextButton::buttonOnColourId,
                               juce::Colour(0x6600ccff));
     autoAlignButton.setColour(juce::TextButton::textColourOnId,
                               juce::Colours::white);
-
-    // Disable delay knobs
     for (auto &slot : slotComponents)
       if (slot)
         slot->setDelayEnabled(false);
-
   } else {
-    // Dim / Standard when OFF
     autoAlignButton.setColour(juce::TextButton::buttonColourId,
                               juce::Colour(0x1affffff));
     autoAlignButton.setColour(juce::TextButton::buttonOnColourId,
                               juce::Colour(0x33ffffff));
-
-    // Enable delay knobs
     for (auto &slot : slotComponents)
       if (slot)
         slot->setDelayEnabled(true);
@@ -188,7 +211,7 @@ void FreeIREditor::paint(juce::Graphics &g) {
   g.fillAll();
 
   // Subtle Noise
-  juce::Random rng(999);
+  juce::Random rng(99);
   g.setColour(juce::Colour(0x06ffffff));
   for (int i = 0; i < 4000; ++i) {
     float nx = rng.nextFloat() * (float)getWidth();
@@ -199,7 +222,6 @@ void FreeIREditor::paint(juce::Graphics &g) {
 
 //==============================================================================
 void FreeIREditor::resized() {
-  // Map rectangles from 1100x720 design space to current bounds
   auto mapRect = [&](int x, int y, int w, int h) -> juce::Rectangle<int> {
     float sx = (float)getWidth() / 1100.0f;
     float sy = (float)getHeight() / 720.0f;
@@ -207,19 +229,28 @@ void FreeIREditor::resized() {
         .toNearestInt();
   };
 
-  // HEADER BAR (Background drawn in Paint? No, let's just layout components)
-  // We'll draw the header panel bg in paint if needed, or just let components
-  // float. Ideally, paint() should use the same scaling logic for the
-  // header-bg. But for now, let's keep it simple.
-
-  // Title
+  // 1. Header (Full Width)
   titleLabel.setBounds(mapRect(24, 12, 200, 60));
 
-  // Header Knobs (Center)
+  // Settings Button in top right
+  settingsButton.setBounds(mapRect(980, 24, 80, 24));
+
+  // Header Knobs (Offset to accommodate browser?)
+  // Browser is ~250px on Left. Layout shifts right.
+  // Actually, let's keep Browser below header?
+  // No, full height sidebar looks more "ShadCN Dashboard".
+  // But title is global.
+  // Let's put Title/Header Top, Browser Left, Mixer Right.
+
+  // Header height ~80px.
+  // Browser: x=12, y=80, w=250, h=Bottom-EQ
+
+  int headerH = 80;
+
+  // Header Knobs
   int knobSize = 46;
   int spacing = 80;
-  // Center X = 550. Total width = 3 * 80 = 240. Start X = 430.
-  int startX = 430;
+  int startX = 500; // Shifted right
   int knobY = 18;
 
   auto layoutHeaderKnob = [&](juce::Slider &k, juce::Label &l, int x) {
@@ -230,97 +261,96 @@ void FreeIREditor::resized() {
   layoutHeaderKnob(bassHeaderKnob, bassHeaderLabel, startX);
   layoutHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, startX + spacing);
   layoutHeaderKnob(airHeaderKnob, airHeaderLabel, startX + spacing * 2);
+  layoutHeaderKnob(volumeKnob, volumeLabel, 1100 - 150);
 
-  // Volume (Right)
-  layoutHeaderKnob(volumeKnob, volumeLabel, 1100 - 80);
+  // 2. Main Content Area (Below Header)
+  int contentY = 90;
+  int contentH = 720 - contentY - 12; // Bottom margin
 
-  // EQ SECTIO (Bottom)
-  eqSection.setBounds(mapRect(12, 608, 1076, 100));
+  // BROWSER (Left)
+  int browserW = 240;
+  browser.setBounds(mapRect(12, contentY, browserW, contentH));
 
-  // SLOTS (Left)
-  int slotW = 120;
-  int startY = 100;
-  int slotH = 490; // Height between header and EQ
+  // MIXER AREA (Right of Browser)
+  int mixerX = 12 + browserW + 12;
+  int mixerW = 1100 - mixerX - 12; // Remaining width
 
+  // Waveform (Top of Mixer)
+  int waveH = 200;
+  waveformDisplay.setBounds(mapRect(mixerX, contentY, mixerW, waveH));
+
+  // Slots (Below Waveform)
+  int slotsY = contentY + waveH + 12;
+  int eqH = 90;
+  int slotsH = contentH - waveH - 12 - eqH - 12;
+
+  int slotW = mixerW / 4;
   for (int i = 0; i < 4; ++i) {
     slotComponents[i]->setBounds(
-        mapRect(24 + (i * slotW), startY, slotW - 8, slotH));
+        mapRect(mixerX + (i * slotW), slotsY, slotW - 8, slotsH));
   }
 
-  // RIGHT PANEL (IR List, Waveform, Buttons)
-  int rightPanelX = 24 + (4 * slotW) + 12;   // ~516
-  int rightPanelW = 1100 - rightPanelX - 24; // ~560
-  int curY = startY;
+  // EQ Section (Bottom of Mixer)
+  int eqY = slotsY + slotsH + 12;
+  eqSection.setBounds(mapRect(mixerX, eqY, mixerW, eqH));
 
-  // IR List Buttons
-  int btnH = 28;
-  for (int i = 0; i < 4; ++i) {
-    irListButtons[i]->setBounds(mapRect(rightPanelX, curY, rightPanelW, btnH));
-    curY += 34;
-  }
+  // Auto Align & Export (Floating? Or in Header?)
+  // Let's put them in the space between Waveform and Slots? Or Header?
+  // User didn't specify. Header is crowded.
+  // Let's put them Top Right of Mixer Area (overlaying waveform or just above
+  // slots?) Or alongside Waveform? Let's put them in the Header, moving Volume
+  // knob left.
 
-  curY += 12;
+  // Actually, let's put them below Browser?
+  // No, browser is full height.
+  // Let's put them in the "Gap" between header and waveform? No gap.
+  // Let's overlay them on the Waveform (top right corner)? "ShadCN" overlays
+  // are common. Or just put them in the Header. Header: Title ... Knobs ...
+  // [Auto Align] [Export] [Settings]
 
-  // Waveform
-  int waveH = 250;
-  waveformDisplay.setBounds(mapRect(rightPanelX, curY, rightPanelW, waveH));
-  curY += waveH + 16;
+  // Re-layout Header:
+  // Title (24, 12)
+  // Knobs (Center)
+  // Buttons (Right)
+
+  int rightBtnX = 1100 - 100; // Settings
+  int exportX = rightBtnX - 100;
+  int autoAlignX = exportX - 100;
+  int volumeX = autoAlignX - 90;
+
+  // Adjust Knobs
+  int centerKnobsX = 350;
+  layoutHeaderKnob(bassHeaderKnob, bassHeaderLabel, centerKnobsX);
+  layoutHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, centerKnobsX + 80);
+  layoutHeaderKnob(airHeaderKnob, airHeaderLabel, centerKnobsX + 160);
+
+  // Volume
+  layoutHeaderKnob(volumeKnob, volumeLabel, volumeX);
 
   // Buttons
-  int btnW = (rightPanelW - 12) / 2;
-  autoAlignButton.setBounds(mapRect(rightPanelX, curY, btnW, 32));
-  exportButton.setBounds(mapRect(rightPanelX + btnW + 12, curY, btnW, 32));
+  autoAlignButton.setBounds(mapRect(autoAlignX, 24, 90, 24));
+  exportButton.setBounds(mapRect(exportX, 24, 90, 24));
+  // Settings already set
 }
 
 //==============================================================================
-void FreeIREditor::timerCallback() { refreshIRList(); }
+void FreeIREditor::timerCallback() {
+  // Slots update themselves via listeners mostly, but let's keep timer for
+  // anything else
+}
 
 void FreeIREditor::alignmentComplete() { refreshWaveform(); }
 
 //==============================================================================
-void FreeIREditor::refreshIRList() {
-  for (int i = 0; i < 4; ++i) {
-    auto &slot = proc.getIRSlot(i);
-    juce::String text = juce::String(i + 1) + ". ";
-
-    if (slot.isLoaded()) {
-      text += slot.getSlotName();
-      irListButtons[i]->setColour(juce::TextButton::textColourOffId,
-                                  juce::Colours::white);
-      // Bright glass when loaded
-      irListButtons[i]->setColour(juce::TextButton::buttonColourId,
-                                  juce::Colour(0x1affffff));
-    } else {
-      text += "Empty (Click to Load)";
-      irListButtons[i]->setColour(juce::TextButton::textColourOffId,
-                                  juce::Colour(0xff666666));
-      irListButtons[i]->setColour(juce::TextButton::buttonColourId,
-                                  juce::Colour(0x0affffff));
-    }
-
-    if (irListButtons[i]->getButtonText() != text)
-      irListButtons[i]->setButtonText(text);
-  }
-}
-
 void FreeIREditor::refreshWaveform() {
   for (int i = 0; i < 4; ++i) {
     auto &slot = proc.getIRSlot(i);
-
-    // Read the delay parameter converted to 0..1 then map to ms?
-    // No, APVTS parameters are float.
-    // But we need the actual value in milliseconds.
     float currentDelayMs = 0.0f;
     auto *param =
         proc.getAPVTS().getParameter("Slot" + juce::String(i + 1) + "_DelayMs");
-    if (param) {
-      // getParameter returns 0..1 normalized usually if using
-      // AudioProcessorParameter::getValue() But convertFrom0to1 gives real
-      // value. Actually `getAPVTS().getRawParameterValue` returns the float
-      // *value* directly (atomic).
+    if (param)
       currentDelayMs = *proc.getAPVTS().getRawParameterValue(
           "Slot" + juce::String(i + 1) + "_DelayMs");
-    }
 
     if (slot.isLoaded())
       waveformDisplay.setIRData(i, &slot.getIRBuffer(), slot.getIRSampleRate(),
@@ -332,21 +362,6 @@ void FreeIREditor::refreshWaveform() {
 }
 
 void FreeIREditor::loadIRForSlot(int slotIndex) {
-  auto chooser = std::make_shared<juce::FileChooser>(
-      "Load Impulse Response for Slot " + juce::String(slotIndex + 1),
-      juce::File::getSpecialLocation(juce::File::userHomeDirectory),
-      "*.wav;*.aif;*.aiff");
-
-  chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                           juce::FileBrowserComponent::canSelectFiles,
-                       [this, slotIndex, chooser](const juce::FileChooser &fc) {
-                         auto file = fc.getResult();
-                         if (file.existsAsFile()) {
-                           proc.getIRSlot(slotIndex).loadImpulseResponse(file);
-                           refreshIRList();
-                           refreshWaveform();
-                           if (slotComponents[slotIndex])
-                             slotComponents[slotIndex]->updateSlotDisplay();
-                         }
-                       });
+  // Deprecated/Unused? Kept for compatibility if needed
+  // Slots manage their own loading now.
 }

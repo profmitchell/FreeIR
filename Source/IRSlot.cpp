@@ -138,3 +138,55 @@ bool IRSlot::isSoloed() const {
 }
 
 void IRSlot::setAlignmentDelay(double ms) { alignmentDelayMs = ms; }
+double IRSlot::getAlignmentDelay() const { return alignmentDelayMs; }
+void IRSlot::loadNextIR() {
+  if (!currentFile.exists())
+    return;
+
+  auto parent = currentFile.getParentDirectory();
+  auto files =
+      parent.findChildFiles(juce::File::findFiles, false, "*.wav;*.aif;*.aiff");
+
+  if (files.isEmpty())
+    return;
+
+  int index = -1;
+  for (int i = 0; i < files.size(); ++i) {
+    if (files[i] == currentFile) {
+      index = i;
+      break;
+    }
+  }
+
+  if (index != -1) {
+    // Loop forward
+    int nextIndex = (index + 1) % files.size();
+    loadImpulseResponse(files[nextIndex]);
+  }
+}
+
+void IRSlot::loadPrevIR() {
+  if (!currentFile.exists())
+    return;
+
+  auto parent = currentFile.getParentDirectory();
+  auto files =
+      parent.findChildFiles(juce::File::findFiles, false, "*.wav;*.aif;*.aiff");
+
+  if (files.isEmpty())
+    return;
+
+  int index = -1;
+  for (int i = 0; i < files.size(); ++i) {
+    if (files[i] == currentFile) {
+      index = i;
+      break;
+    }
+  }
+
+  if (index != -1) {
+    // Loop backward
+    int prevIndex = (index - 1 + files.size()) % files.size();
+    loadImpulseResponse(files[prevIndex]);
+  }
+}
