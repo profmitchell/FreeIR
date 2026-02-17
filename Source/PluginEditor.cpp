@@ -14,37 +14,18 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
 
   // Browser
   browser.onLoadIR = [this](juce::File f) {
-    // Logic to load into *currently selected* slot?
-    // Or just load into Slot 1 by default?
-    // User didn't specify selection logic.
-    // But the Slots have their own "Load" buttons now.
-    // So the browser is mostly for management/drag?
-    // "when selected display IRs... and ability to load them".
-    // Let's assume double click loads into the *first empty* slot or Slot 1 if
-    // full? Or maybe we need a "Selected Slot" concept in the Editor? For now,
-    // let's load into Slot 1 for simplicity or just perform a callback?
-    // Actually, standard behavior: Drag and Drop.
-    // Double click could replace Slot 1.
     if (proc.getIRSlot(0).isLoaded()) {
-      // Find first empty?
       for (int i = 0; i < 4; ++i) {
         if (!proc.getIRSlot(i).isLoaded()) {
           proc.getIRSlot(i).loadImpulseResponse(f);
-          // notify slot
           return;
         }
       }
-      // All full, replace slot 1
       proc.getIRSlot(0).loadImpulseResponse(f);
     } else {
       proc.getIRSlot(0).loadImpulseResponse(f);
     }
     refreshWaveform();
-    // Slots need update? They update on timer/paint usually or we call
-    // updateSlotDisplay? We don't have direct access to updateSlotDisplay
-    // easily for all unless we expose it. But slots poll? No, we called
-    // updateSlotDisplay manually in load. We should really have a listener
-    // mechanism. Dirty fix: iterate slots and update.
     for (auto &s : slotComponents)
       if (s)
         s->updateSlotDisplay();
@@ -151,9 +132,7 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
                            if (file != juce::File()) {
                              if (!file.hasFileExtension("wav"))
                                file = file.withFileExtension("wav");
-
-                             proc.exportMixedIR(
-                                 file); // No args, uses internal settings
+                             proc.exportMixedIR(file);
                            }
                          });
   };
@@ -161,8 +140,16 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
                          juce::Colour(0x15228822));
   exportButton.setColour(juce::TextButton::buttonOnColourId,
                          juce::Colour(0x3344aa44));
-
   addAndMakeVisible(exportButton);
+
+  // Plugin button
+  pluginButton.onClick = [this]() { showPluginMenu(); };
+  pluginButton.setColour(juce::TextButton::buttonColourId,
+                         juce::Colour(0x15884422));
+  pluginButton.setColour(juce::TextButton::buttonOnColourId,
+                         juce::Colour(0x33aa6644));
+  addAndMakeVisible(pluginButton);
+  updatePluginButtonText();
 
   // EQ Section
   addAndMakeVisible(eqSection);
@@ -176,6 +163,7 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
 }
 
 FreeIREditor::~FreeIREditor() {
+  hostedPluginWindow.reset();
   proc.getAutoAligner().removeListener(this);
   setLookAndFeel(nullptr);
 }
@@ -225,26 +213,39 @@ void FreeIREditor::updateAutoAlignState() {
 }
 
 //==============================================================================
+void FreeIREditor::rebuildNoiseTexture(int w, int h) {
+  if (w <= 0 || h <= 0)
+    return;
+
+  noiseTexture = juce::Image(juce::Image::ARGB, w, h, true);
+  juce::Image::BitmapData bitmap(noiseTexture,
+                                 juce::Image::BitmapData::writeOnly);
+
+  juce::Random rng(99);
+  auto noiseColour = juce::Colour(0x06ffffff);
+
+  for (int i = 0; i < 4000; ++i) {
+    int nx = rng.nextInt(w);
+    int ny = rng.nextInt(h);
+    bitmap.setPixelColour(nx, ny, noiseColour);
+  }
+}
+
 void FreeIREditor::paint(juce::Graphics &g) {
-  // ShadCN Dark Glass Background
   juce::ColourGradient bgGrad(juce::Colour(0xff000000), 0, 0,
                               juce::Colour(0xff121212), 0, (float)getHeight(),
                               false);
   g.setGradientFill(bgGrad);
   g.fillAll();
 
-  // Subtle Noise
-  juce::Random rng(99);
-  g.setColour(juce::Colour(0x06ffffff));
-  for (int i = 0; i < 4000; ++i) {
-    float nx = rng.nextFloat() * (float)getWidth();
-    float ny = rng.nextFloat() * (float)getHeight();
-    g.fillRect(nx, ny, 1.0f, 1.0f);
-  }
+  if (noiseTexture.isValid())
+    g.drawImageAt(noiseTexture, 0, 0);
 }
 
 //==============================================================================
 void FreeIREditor::resized() {
+  rebuildNoiseTexture(getWidth(), getHeight());
+
   auto mapRect = [&](int x, int y, int w, int h) -> juce::Rectangle<int> {
     float sx = (float)getWidth() / 1100.0f;
     float sy = (float)getHeight() / 720.0f;
@@ -252,39 +253,32 @@ void FreeIREditor::resized() {
         .toNearestInt();
   };
 
-  // 1. Header (Full Width)
-  // 1. Header (Full Width)
+  // Header
   titleLabel.setBounds(mapRect(24, 14, 200, 40));
   subtitleLabel.setBounds(mapRect(26, 50, 200, 20));
 
   // Preset Browser (Top Center)
-  int presetW = 300;
-  int presetH = 30;
-  presetBrowser.setBounds(mapRect((1100 - presetW) / 2, 20, presetW, presetH));
+  presetBrowser.setBounds(mapRect(400, 20, 300, 30));
 
-  // 2. Main Content Area
+  // Plugin button (Top Right)
+  pluginButton.setBounds(mapRect(860, 20, 220, 30));
+
+  // Main Content Area
   int contentY = 80;
   int contentH = 720 - contentY - 12;
 
-  // BROWSER (Left)
   int browserW = 240;
   browser.setBounds(mapRect(12, contentY, browserW, contentH));
 
-  // MIXER AREA (Right of Browser)
   int mixerX = 12 + browserW + 12;
   int mixerW = 1100 - mixerX - 12;
 
-  // Waveform
   int waveH = 200;
   waveformDisplay.setBounds(mapRect(mixerX, contentY, mixerW, waveH));
 
-  // Slots
-  int slotH = 260;
   int slotsY = contentY + waveH + 12;
-  // EQ Section Height
-  int eqH = 120; // Slightly taller for labels?
-  // Let's calculate remaining height for Slots
-  slotH = contentH - waveH - 12 - eqH - 12;
+  int eqH = 120;
+  int slotH = contentH - waveH - 12 - eqH - 12;
 
   int slotW = mixerW / 4;
   for (size_t i = 0; i < 4; ++i) {
@@ -292,22 +286,13 @@ void FreeIREditor::resized() {
         mapRect(mixerX + ((int)i * slotW), slotsY, slotW - 8, slotH));
   }
 
-  // EQ Section & Global Buttons (Bottom)
   int eqY = slotsY + slotH + 12;
-
-  // EQ takes 70% width
   int eqReqW = (int)(mixerW * 0.70f);
   eqSection.setBounds(mapRect(mixerX, eqY, eqReqW, eqH));
 
-  // Buttons Area (Right of EQ)
   int btnAreaX = mixerX + eqReqW + 12;
   int btnAreaW = mixerW - eqReqW - 12;
-  // int btnAreaH = eqH; // Unused
 
-  // Layout buttons: AutoAlign, Export, Settings
-  // Arrange in a grid or column?
-  // Let's do a column for "Auto Align" (large?) and "Export/Settings" (smaller)
-  // Or just 3 rows.
   int btnH = 30;
   int btnGap = 10;
   int startBtnY = eqY + (eqH - (3 * btnH + 2 * btnGap)) / 2;
@@ -320,10 +305,7 @@ void FreeIREditor::resized() {
 }
 
 //==============================================================================
-void FreeIREditor::timerCallback() {
-  // Slots update themselves via listeners mostly, but let's keep timer for
-  // anything else
-}
+void FreeIREditor::timerCallback() { updatePluginButtonText(); }
 
 void FreeIREditor::alignmentComplete() {
   proc.applyAlignmentResults();
@@ -350,7 +332,233 @@ void FreeIREditor::refreshWaveform() {
   waveformDisplay.refresh();
 }
 
-void FreeIREditor::loadIRForSlot(int /*slotIndex*/) {
-  // Deprecated/Unused? Kept for compatibility if needed
-  // Slots manage their own loading now.
+void FreeIREditor::loadIRForSlot(int /*slotIndex*/) {}
+
+//==============================================================================
+// Plugin Hosting
+//==============================================================================
+void FreeIREditor::showPluginMenu() {
+  juce::PopupMenu menu;
+
+  // --- Loaded plugin controls ---
+  if (proc.hasHostedPlugin()) {
+    auto name = proc.getHostedPluginName();
+    menu.addSectionHeader("Loaded: " + name);
+
+    bool editorVisible = hostedPluginWindow != nullptr &&
+                         hostedPluginWindow->isVisible();
+
+    if (editorVisible)
+      menu.addItem("Hide Plugin Editor", [this]() { hideHostedPluginEditor(); });
+    else
+      menu.addItem("Show Plugin Editor", [this]() { showHostedPluginEditor(); });
+
+    menu.addItem("Clear Plugin", [this]() { clearHostedPlugin(); });
+    menu.addSeparator();
+  }
+
+  // --- Scan ---
+  if (pluginScanInProgress) {
+    menu.addItem("Scanning...", false, false, nullptr);
+  } else if (proc.getKnownPluginList().getNumTypes() == 0 &&
+             !pluginScanComplete) {
+    menu.addItem("Scan for Plugins...", [this]() { scanForPluginsAsync(); });
+  } else {
+    menu.addItem("Rescan Plugins...", [this]() { scanForPluginsAsync(); });
+  }
+
+  // --- Search ---
+  if (proc.getKnownPluginList().getNumTypes() > 0) {
+    menu.addItem("Search Plugins...", [this]() { searchAndLoadPlugin(); });
+    menu.addSeparator();
+
+    // Full plugin list (effects only), grouped by manufacturer
+    auto fullList = buildPluginListMenu("");
+    menu.addSubMenu(
+        "All Plugins (" +
+            juce::String(proc.getKnownPluginList().getNumTypes()) + ")",
+        fullList);
+  }
+
+  menu.showMenuAsync(
+      juce::PopupMenu::Options().withTargetComponent(pluginButton));
+}
+
+juce::PopupMenu
+FreeIREditor::buildPluginListMenu(const juce::String &filter) {
+  juce::PopupMenu result;
+
+  auto &knownList = proc.getKnownPluginList();
+  auto types = knownList.getTypes();
+
+  // Sort by manufacturer then name
+  std::sort(types.begin(), types.end(),
+            [](const juce::PluginDescription &a,
+               const juce::PluginDescription &b) {
+              if (a.manufacturerName == b.manufacturerName)
+                return a.name.compareIgnoreCase(b.name) < 0;
+              return a.manufacturerName.compareIgnoreCase(
+                         b.manufacturerName) < 0;
+            });
+
+  std::map<juce::String, juce::PopupMenu> byManufacturer;
+  int count = 0;
+
+  for (auto &desc : types) {
+    // Skip instruments (synths) -- only show effects
+    if (desc.isInstrument)
+      continue;
+
+    // Apply search filter
+    if (filter.isNotEmpty()) {
+      bool matches =
+          desc.name.containsIgnoreCase(filter) ||
+          desc.manufacturerName.containsIgnoreCase(filter) ||
+          desc.category.containsIgnoreCase(filter);
+      if (!matches)
+        continue;
+    }
+
+    // Format tag: (VST3) or (AU)
+    juce::String tag;
+    if (desc.pluginFormatName == "VST3")
+      tag = " [VST3]";
+    else if (desc.pluginFormatName == "AudioUnit")
+      tag = " [AU]";
+
+    byManufacturer[desc.manufacturerName].addItem(
+        desc.name + tag, [this, desc]() {
+          proc.loadHostedPlugin(desc, [this](bool success) {
+            juce::MessageManager::callAsync([this, success]() {
+              if (success) {
+                updatePluginButtonText();
+                showHostedPluginEditor();
+              }
+            });
+          });
+        });
+    ++count;
+  }
+
+  if (count == 0) {
+    result.addItem("No matching plugins", false, false, nullptr);
+    return result;
+  }
+
+  for (auto &[manufacturer, subMenu] : byManufacturer)
+    result.addSubMenu(manufacturer, subMenu);
+
+  return result;
+}
+
+void FreeIREditor::showFilteredPluginMenu(const juce::String &filter) {
+  auto menu = buildPluginListMenu(filter);
+  menu.showMenuAsync(
+      juce::PopupMenu::Options().withTargetComponent(pluginButton));
+}
+
+void FreeIREditor::scanForPluginsAsync() {
+  if (pluginScanInProgress)
+    return;
+
+  pluginScanInProgress = true;
+
+  // Run scan on a background thread
+  juce::Thread::launch([this]() {
+    auto &formatManager = proc.getPluginFormatManager();
+    auto &knownList = proc.getKnownPluginList();
+
+    for (auto *format : formatManager.getFormats()) {
+      auto searchPaths = format->getDefaultLocationsToSearch();
+      juce::PluginDirectoryScanner scanner(knownList, *format, searchPaths,
+                                           true, juce::File());
+
+      juce::String pluginName;
+      while (scanner.scanNextFile(true, pluginName)) {
+        // scanning
+      }
+    }
+
+    juce::MessageManager::callAsync([this]() {
+      pluginScanComplete = true;
+      pluginScanInProgress = false;
+
+      auto numFound = proc.getKnownPluginList().getNumTypes();
+      juce::NativeMessageBox::showMessageBoxAsync(
+          juce::MessageBoxIconType::InfoIcon, "Plugin Scan Complete",
+          "Found " + juce::String(numFound) + " plugins.");
+    });
+  });
+}
+
+void FreeIREditor::searchAndLoadPlugin() {
+  auto *aw = new juce::AlertWindow("Search Plugins", "Type a plugin name:",
+                                   juce::MessageBoxIconType::QuestionIcon);
+  aw->addTextEditor("search", "", "Plugin name:");
+  aw->addButton("Search", 1);
+  aw->addButton("Cancel", 0);
+
+  aw->enterModalState(true, juce::ModalCallbackFunction::create(
+                                [this, aw](int result) {
+                                  if (result == 1) {
+                                    auto query =
+                                        aw->getTextEditorContents("search")
+                                            .trim();
+                                    if (query.isNotEmpty())
+                                      showFilteredPluginMenu(query);
+                                  }
+                                  delete aw;
+                                }));
+}
+
+void FreeIREditor::showHostedPluginEditor() {
+  auto *plugin = proc.getHostedPlugin();
+  if (plugin == nullptr)
+    return;
+
+  // If window exists but hidden, just show it
+  if (hostedPluginWindow != nullptr) {
+    hostedPluginWindow->setVisible(true);
+    hostedPluginWindow->toFront(true);
+    return;
+  }
+
+  if (auto *editor = plugin->createEditorIfNeeded()) {
+    hostedPluginWindow =
+        std::make_unique<HostedPluginWindow>(editor, plugin->getName());
+  }
+}
+
+void FreeIREditor::hideHostedPluginEditor() {
+  if (hostedPluginWindow != nullptr)
+    hostedPluginWindow->setVisible(false);
+}
+
+void FreeIREditor::toggleHostedPluginEditor() {
+  if (hostedPluginWindow != nullptr && hostedPluginWindow->isVisible())
+    hideHostedPluginEditor();
+  else
+    showHostedPluginEditor();
+}
+
+void FreeIREditor::clearHostedPlugin() {
+  hostedPluginWindow.reset();
+  proc.unloadHostedPlugin();
+  updatePluginButtonText();
+}
+
+void FreeIREditor::updatePluginButtonText() {
+  if (proc.hasHostedPlugin()) {
+    auto name = proc.getHostedPluginName();
+    // Truncate long names
+    if (name.length() > 22)
+      name = name.substring(0, 20) + "..";
+    pluginButton.setButtonText("FX: " + name);
+    pluginButton.setColour(juce::TextButton::buttonColourId,
+                           juce::Colour(0x33ff8800));
+  } else {
+    pluginButton.setButtonText("Load Plugin");
+    pluginButton.setColour(juce::TextButton::buttonColourId,
+                           juce::Colour(0x15884422));
+  }
 }

@@ -13,9 +13,15 @@ FreeIRAudioProcessor::FreeIRAudioProcessor()
       eqProcessor(apvts), autoAligner(slots) {
   for (int i = 0; i < numSlots; ++i)
     slots[i].init(i, &apvts);
+
+  // Register plugin formats for hosted amp sim support
+  juce::addDefaultFormatsToManager(pluginFormatManager);
 }
 
-FreeIRAudioProcessor::~FreeIRAudioProcessor() {}
+FreeIRAudioProcessor::~FreeIRAudioProcessor() {
+  const juce::ScopedLock sl(hostedPluginLock);
+  hostedPlugin.reset();
+}
 
 //==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout
@@ -101,12 +107,23 @@ void FreeIRAudioProcessor::prepareToPlay(double sampleRate,
   eqProcessor.prepare(spec);
 
   mixBuffer.setSize(2, samplesPerBlock);
+
+  // Prepare hosted plugin if loaded
+  {
+    const juce::ScopedLock sl(hostedPluginLock);
+    if (hostedPlugin != nullptr)
+      hostedPlugin->prepareToPlay(sampleRate, samplesPerBlock);
+  }
 }
 
 void FreeIRAudioProcessor::releaseResources() {
   for (auto &slot : slots)
     slot.reset();
   eqProcessor.reset();
+
+  const juce::ScopedLock sl(hostedPluginLock);
+  if (hostedPlugin != nullptr)
+    hostedPlugin->releaseResources();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -124,7 +141,7 @@ bool FreeIRAudioProcessor::isBusesLayoutSupported(
 #endif
 
 void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
-                                        juce::MidiBuffer &) {
+                                        juce::MidiBuffer &midiMessages) {
   juce::ScopedNoDenormals noDenormals;
   int totalNumInputChannels = getTotalNumInputChannels();
   int totalNumOutputChannels = getTotalNumOutputChannels();
@@ -133,6 +150,13 @@ void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   // Clear unused output channels
   for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     buffer.clear(i, 0, numSamples);
+
+  // Route through hosted amp sim plugin (pre-IR chain)
+  {
+    const juce::ScopedLock sl(hostedPluginLock);
+    if (hostedPlugin != nullptr)
+      hostedPlugin->processBlock(buffer, midiMessages);
+  }
 
   // Check if any slot is soloed
   bool anySoloed = false;
@@ -461,4 +485,44 @@ void FreeIRAudioProcessor::revertAutoAlignment() {
       }
     }
   }
+}
+
+//==============================================================================
+// Hosted Plugin (Amp Sim) Support
+//==============================================================================
+void FreeIRAudioProcessor::loadHostedPlugin(
+    const juce::PluginDescription &desc,
+    std::function<void(bool)> callback) {
+
+  pluginFormatManager.createPluginInstanceAsync(
+      desc, currentSampleRate, currentBlockSize,
+      [this, callback](std::unique_ptr<juce::AudioPluginInstance> instance,
+                       const juce::String &error) {
+        if (instance != nullptr) {
+          instance->prepareToPlay(currentSampleRate, currentBlockSize);
+          instance->setPlayHead(getPlayHead());
+
+          const juce::ScopedLock sl(hostedPluginLock);
+          hostedPlugin = std::move(instance);
+        } else {
+          DBG("Failed to load hosted plugin: " + error);
+        }
+
+        if (callback)
+          callback(instance != nullptr || hostedPlugin != nullptr);
+      });
+}
+
+void FreeIRAudioProcessor::unloadHostedPlugin() {
+  const juce::ScopedLock sl(hostedPluginLock);
+  if (hostedPlugin != nullptr) {
+    hostedPlugin->releaseResources();
+    hostedPlugin.reset();
+  }
+}
+
+juce::String FreeIRAudioProcessor::getHostedPluginName() const {
+  if (hostedPlugin != nullptr)
+    return hostedPlugin->getName();
+  return {};
 }

@@ -25,8 +25,8 @@ public:
   double getIRSampleRate() const { return irSampleRate; }
 
   void setAlignmentDelay(double delayMs);
-  double getAlignmentDelay() const; // For Auto-Align internal
-  double manualDelayMs = 0.0;       // Saved manual delay for toggling
+  double getAlignmentDelay() const;
+  double manualDelayMs = 0.0;
 
   // Navigation
   void loadNextIR();
@@ -48,7 +48,7 @@ private:
 
   juce::dsp::DelayLine<float,
                        juce::dsp::DelayLineInterpolationTypes::Lagrange3rd>
-      delayLine{4800}; // Max ~100ms at 48k
+      delayLine{4800};
   juce::SmoothedValue<float> delaySmoothed;
 
   juce::AudioBuffer<float> slotBuffer;
@@ -57,5 +57,10 @@ private:
   int blockSize = 512;
   double alignmentDelayMs = 0.0;
 
-  juce::String paramPrefix() const;
+  // Cached raw parameter pointers (resolved once in init, no string alloc)
+  std::atomic<float> *delayParam = nullptr;
+  std::atomic<float> *panParam = nullptr;
+  std::atomic<float> *levelParam = nullptr;
+  std::atomic<float> *muteParam = nullptr;
+  std::atomic<float> *soloParam = nullptr;
 };

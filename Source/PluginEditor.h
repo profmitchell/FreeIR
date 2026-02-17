@@ -11,6 +11,28 @@
 #include <JuceHeader.h>
 
 //==============================================================================
+// Floating window to host an external plugin's editor
+class HostedPluginWindow : public juce::DocumentWindow {
+public:
+  HostedPluginWindow(juce::AudioProcessorEditor *editor,
+                     const juce::String &pluginName)
+      : juce::DocumentWindow(pluginName,
+                             juce::Colours::black.withAlpha(0.9f),
+                             juce::DocumentWindow::closeButton) {
+    setContentOwned(editor, true);
+    setResizable(true, false);
+    centreWithSize(editor->getWidth(), editor->getHeight());
+    setVisible(true);
+    setAlwaysOnTop(true);
+  }
+
+  void closeButtonPressed() override { setVisible(false); }
+
+private:
+  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HostedPluginWindow)
+};
+
+//==============================================================================
 class FreeIREditor : public juce::AudioProcessorEditor,
                      public juce::Timer,
                      public AutoAligner::Listener {
@@ -56,13 +78,19 @@ private:
   // Waveform display
   WaveformDisplay waveformDisplay;
 
-  // Auto Align toggle button (changed from text button)
+  // Auto Align toggle button
   juce::TextButton autoAlignButton{"Auto Align"};
   bool isAutoAlignOn = false;
 
   // Settings & Export
   juce::TextButton settingsButton{"Settings"};
   juce::TextButton exportButton{"Export IR"};
+
+  // Plugin hosting
+  juce::TextButton pluginButton{"Load Plugin"};
+  std::unique_ptr<HostedPluginWindow> hostedPluginWindow;
+  bool pluginScanComplete = false;
+  bool pluginScanInProgress = false;
 
   // EQ Section
   EQSectionComponent eqSection;
@@ -71,6 +99,10 @@ private:
   juce::ComponentBoundsConstrainer constrainer;
   static constexpr int defaultWidth = 1100;
   static constexpr int defaultHeight = 720;
+
+  // Pre-rendered noise texture
+  juce::Image noiseTexture;
+  void rebuildNoiseTexture(int w, int h);
 
   // Helpers
   void refreshIRList();
@@ -83,6 +115,18 @@ private:
       std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
           &attach,
       double defaultVal);
+
+  // Plugin hosting helpers
+  void showPluginMenu();
+  void scanForPluginsAsync();
+  void searchAndLoadPlugin();
+  void showHostedPluginEditor();
+  void hideHostedPluginEditor();
+  void toggleHostedPluginEditor();
+  void clearHostedPlugin();
+  void updatePluginButtonText();
+  void showFilteredPluginMenu(const juce::String &filter);
+  juce::PopupMenu buildPluginListMenu(const juce::String &filter);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FreeIREditor)
 };

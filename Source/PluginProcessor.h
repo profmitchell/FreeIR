@@ -70,6 +70,21 @@ public:
   void applyAlignmentResults();
   void revertAutoAlignment();
 
+  // --- Hosted Plugin (Amp Sim) Support ---
+  juce::AudioPluginFormatManager &getPluginFormatManager() {
+    return pluginFormatManager;
+  }
+  juce::KnownPluginList &getKnownPluginList() { return knownPluginList; }
+
+  void loadHostedPlugin(const juce::PluginDescription &desc,
+                        std::function<void(bool)> callback);
+  void unloadHostedPlugin();
+  juce::AudioPluginInstance *getHostedPlugin() const {
+    return hostedPlugin.get();
+  }
+  juce::String getHostedPluginName() const;
+  bool hasHostedPlugin() const { return hostedPlugin != nullptr; }
+
 private:
   juce::AudioProcessorValueTreeState apvts;
   juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -83,6 +98,12 @@ private:
 
   double currentSampleRate = 48000.0;
   int currentBlockSize = 512;
+
+  // --- Hosted Plugin ---
+  juce::AudioPluginFormatManager pluginFormatManager;
+  juce::KnownPluginList knownPluginList;
+  std::unique_ptr<juce::AudioPluginInstance> hostedPlugin;
+  juce::CriticalSection hostedPluginLock;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FreeIRAudioProcessor)
 };
