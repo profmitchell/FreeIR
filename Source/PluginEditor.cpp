@@ -53,8 +53,8 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   browser.onLoadIRToSlot = [this](juce::File f, int slotIndex) {
     if (slotIndex >= 0 && slotIndex < 4) {
       proc.getIRSlot(slotIndex).loadImpulseResponse(f);
-      if (slotComponents[slotIndex])
-        slotComponents[slotIndex]->updateSlotDisplay();
+      if (slotComponents[(size_t)slotIndex])
+        slotComponents[(size_t)slotIndex]->updateSlotDisplay();
       refreshWaveform();
     }
   };
@@ -111,8 +111,8 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   setupHeaderKnob(volumeKnob, volumeLabel, "OutputGainDb", volumeAttach, 0.0);
 
   // 4 Slot strips
-  for (int i = 0; i < 4; ++i) {
-    slotComponents[i] = std::make_unique<IRSlotComponent>(proc, i);
+  for (size_t i = 0; i < 4; ++i) {
+    slotComponents[i] = std::make_unique<IRSlotComponent>(proc, (int)i);
     slotComponents[i]->onSlotChanged = [this]() { refreshWaveform(); };
     addAndMakeVisible(*slotComponents[i]);
   }
@@ -257,45 +257,14 @@ void FreeIREditor::resized() {
   titleLabel.setBounds(mapRect(24, 14, 200, 40));
   subtitleLabel.setBounds(mapRect(26, 50, 200, 20));
 
-  // Settings Button in top right
-  settingsButton.setBounds(mapRect(980, 24, 80, 24));
-
   // Preset Browser (Top Center)
   int presetW = 300;
   int presetH = 30;
   presetBrowser.setBounds(mapRect((1100 - presetW) / 2, 20, presetW, presetH));
 
-  // Header Knobs (Offset to accommodate browser?)
-  // Browser is ~250px on Left. Layout shifts right.
-  // Actually, let's keep Browser below header?
-  // No, full height sidebar looks more "ShadCN Dashboard".
-  // But title is global.
-  // Let's put Title/Header Top, Browser Left, Mixer Right.
-
-  // Header height ~80px.
-  // Browser: x=12, y=80, w=250, h=Bottom-EQ
-
-  int headerH = 80;
-
-  // Header Knobs
-  int knobSize = 46;
-  int spacing = 80;
-  int startX = 500; // Shifted right
-  int knobY = 18;
-
-  auto layoutHeaderKnob = [&](juce::Slider &k, juce::Label &l, int x) {
-    k.setBounds(mapRect(x, knobY, knobSize, knobSize));
-    l.setBounds(mapRect(x, knobY + 46, knobSize, 14));
-  };
-
-  layoutHeaderKnob(bassHeaderKnob, bassHeaderLabel, startX);
-  layoutHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, startX + spacing);
-  layoutHeaderKnob(airHeaderKnob, airHeaderLabel, startX + spacing * 2);
-  layoutHeaderKnob(volumeKnob, volumeLabel, 1100 - 150);
-
-  // 2. Main Content Area (Below Header)
-  int contentY = 90;
-  int contentH = 720 - contentY - 12; // Bottom margin
+  // 2. Main Content Area
+  int contentY = 80;
+  int contentH = 720 - contentY - 12;
 
   // BROWSER (Left)
   int browserW = 240;
@@ -303,64 +272,51 @@ void FreeIREditor::resized() {
 
   // MIXER AREA (Right of Browser)
   int mixerX = 12 + browserW + 12;
-  int mixerW = 1100 - mixerX - 12; // Remaining width
+  int mixerW = 1100 - mixerX - 12;
 
-  // Waveform (Top of Mixer)
+  // Waveform
   int waveH = 200;
   waveformDisplay.setBounds(mapRect(mixerX, contentY, mixerW, waveH));
 
-  // Slots (Below Waveform)
+  // Slots
+  int slotH = 260;
   int slotsY = contentY + waveH + 12;
-  int eqH = 90;
-  int slotsH = contentH - waveH - 12 - eqH - 12;
+  // EQ Section Height
+  int eqH = 120; // Slightly taller for labels?
+  // Let's calculate remaining height for Slots
+  slotH = contentH - waveH - 12 - eqH - 12;
 
   int slotW = mixerW / 4;
-  for (int i = 0; i < 4; ++i) {
+  for (size_t i = 0; i < 4; ++i) {
     slotComponents[i]->setBounds(
-        mapRect(mixerX + (i * slotW), slotsY, slotW - 8, slotsH));
+        mapRect(mixerX + ((int)i * slotW), slotsY, slotW - 8, slotH));
   }
 
-  // EQ Section (Bottom of Mixer)
-  int eqY = slotsY + slotsH + 12;
-  eqSection.setBounds(mapRect(mixerX, eqY, mixerW, eqH));
+  // EQ Section & Global Buttons (Bottom)
+  int eqY = slotsY + slotH + 12;
 
-  // Auto Align & Export (Floating? Or in Header?)
-  // Let's put them in the space between Waveform and Slots? Or Header?
-  // User didn't specify. Header is crowded.
-  // Let's put them Top Right of Mixer Area (overlaying waveform or just above
-  // slots?) Or alongside Waveform? Let's put them in the Header, moving Volume
-  // knob left.
+  // EQ takes 70% width
+  int eqReqW = (int)(mixerW * 0.70f);
+  eqSection.setBounds(mapRect(mixerX, eqY, eqReqW, eqH));
 
-  // Actually, let's put them below Browser?
-  // No, browser is full height.
-  // Let's put them in the "Gap" between header and waveform? No gap.
-  // Let's overlay them on the Waveform (top right corner)? "ShadCN" overlays
-  // are common. Or just put them in the Header. Header: Title ... Knobs ...
-  // [Auto Align] [Export] [Settings]
+  // Buttons Area (Right of EQ)
+  int btnAreaX = mixerX + eqReqW + 12;
+  int btnAreaW = mixerW - eqReqW - 12;
+  // int btnAreaH = eqH; // Unused
 
-  // Re-layout Header:
-  // Title (24, 12)
-  // Knobs (Center)
-  // Buttons (Right)
+  // Layout buttons: AutoAlign, Export, Settings
+  // Arrange in a grid or column?
+  // Let's do a column for "Auto Align" (large?) and "Export/Settings" (smaller)
+  // Or just 3 rows.
+  int btnH = 30;
+  int btnGap = 10;
+  int startBtnY = eqY + (eqH - (3 * btnH + 2 * btnGap)) / 2;
 
-  int rightBtnX = 1100 - 100; // Settings
-  int exportX = rightBtnX - 100;
-  int autoAlignX = exportX - 100;
-  int volumeX = autoAlignX - 90;
-
-  // Adjust Knobs
-  int centerKnobsX = 350;
-  layoutHeaderKnob(bassHeaderKnob, bassHeaderLabel, centerKnobsX);
-  layoutHeaderKnob(trebleHeaderKnob, trebleHeaderLabel, centerKnobsX + 80);
-  layoutHeaderKnob(airHeaderKnob, airHeaderLabel, centerKnobsX + 160);
-
-  // Volume
-  layoutHeaderKnob(volumeKnob, volumeLabel, volumeX);
-
-  // Buttons
-  autoAlignButton.setBounds(mapRect(autoAlignX, 24, 90, 24));
-  exportButton.setBounds(mapRect(exportX, 24, 90, 24));
-  // Settings already set
+  autoAlignButton.setBounds(mapRect(btnAreaX, startBtnY, btnAreaW, btnH));
+  exportButton.setBounds(
+      mapRect(btnAreaX, startBtnY + btnH + btnGap, btnAreaW, btnH));
+  settingsButton.setBounds(
+      mapRect(btnAreaX, startBtnY + 2 * (btnH + btnGap), btnAreaW, btnH));
 }
 
 //==============================================================================
@@ -394,7 +350,7 @@ void FreeIREditor::refreshWaveform() {
   waveformDisplay.refresh();
 }
 
-void FreeIREditor::loadIRForSlot(int slotIndex) {
+void FreeIREditor::loadIRForSlot(int /*slotIndex*/) {
   // Deprecated/Unused? Kept for compatibility if needed
   // Slots manage their own loading now.
 }

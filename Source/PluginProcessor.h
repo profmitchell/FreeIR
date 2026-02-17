@@ -48,8 +48,8 @@ public:
 
   juce::AudioProcessorValueTreeState &getAPVTS() { return apvts; }
 
-  IRSlot &getIRSlot(int index) { return slots[index]; }
-  const IRSlot &getIRSlot(int index) const { return slots[index]; }
+  IRSlot &getIRSlot(int index) { return slots[(size_t)index]; }
+  const IRSlot &getIRSlot(int index) const { return slots[(size_t)index]; }
   EQProcessor &getEQ() { return eqProcessor; }
   AutoAligner &getAutoAligner() { return autoAligner; }
   PresetManager &getPresetManager() { return presetManager; }

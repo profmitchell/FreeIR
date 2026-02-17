@@ -7,15 +7,16 @@ void WaveformDisplay::setIRData(int slotIndex,
                                 double sampleRate, double alignOffsetMs) {
   if (slotIndex < 0 || slotIndex >= 4)
     return;
-  slotData[slotIndex] = {buffer, sampleRate, alignOffsetMs,
-                         buffer != nullptr && buffer->getNumSamples() > 0};
+  slotData[(size_t)slotIndex] = {buffer, sampleRate, alignOffsetMs,
+                                 buffer != nullptr &&
+                                     buffer->getNumSamples() > 0};
   needsRepaint = true;
 }
 
 void WaveformDisplay::clearSlot(int slotIndex) {
   if (slotIndex < 0 || slotIndex >= 4)
     return;
-  slotData[slotIndex] = {};
+  slotData[(size_t)slotIndex] = {};
   needsRepaint = true;
 }
 
@@ -84,12 +85,12 @@ void WaveformDisplay::paint(juce::Graphics &g) {
   };
 
   for (int s = 3; s >= 0; --s) {
-    if (!slotData[s].valid || slotData[s].buffer == nullptr)
+    if (!slotData[(size_t)s].valid || slotData[(size_t)s].buffer == nullptr)
       continue;
 
-    const auto &buf = *slotData[s].buffer;
-    double sr = slotData[s].sampleRate;
-    double offsetMs = slotData[s].alignOffsetMs;
+    const auto &buf = *slotData[(size_t)s].buffer;
+    double sr = slotData[(size_t)s].sampleRate;
+    double offsetMs = slotData[(size_t)s].alignOffsetMs;
 
     if (buf.getNumSamples() == 0 || sr <= 0.0)
       continue;

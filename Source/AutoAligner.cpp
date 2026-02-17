@@ -46,7 +46,7 @@ void AutoAligner::run() {
     }
 
     const auto &targetIR = slots[i].getIRBuffer();
-    double targetSR = slots[i].getIRSampleRate();
+    // double targetSR = slots[i].getIRSampleRate(); // Unused
 
     // Use the lower sample rate for safety
     double offset = findDelayOffset(refIR, targetIR, refSR);

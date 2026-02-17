@@ -40,7 +40,8 @@ public:
   //--------------------------------------------------------------------------
   void drawRotarySlider(juce::Graphics &g, int x, int y, int width, int height,
                         float sliderPos, float rotaryStartAngle,
-                        float rotaryEndAngle, juce::Slider &slider) override {
+                        float rotaryEndAngle,
+                        juce::Slider & /*slider*/) override {
     auto radius = (float)juce::jmin(width, height) * 0.38f;
     auto centreX = (float)x + (float)width * 0.5f;
     auto centreY = (float)y + (float)height * 0.5f;
@@ -197,8 +198,8 @@ public:
   }
 
   void drawButtonText(juce::Graphics &g, juce::TextButton &button,
-                      bool shouldDrawButtonAsHighlighted,
-                      bool shouldDrawButtonAsDown) override {
+                      bool /*shouldDrawButtonAsHighlighted*/,
+                      bool /*shouldDrawButtonAsDown*/) override {
     auto colour = button.getToggleState()
                       ? button.findColour(juce::TextButton::textColourOnId)
                       : button.findColour(juce::TextButton::textColourOffId);

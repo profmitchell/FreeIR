@@ -136,7 +136,7 @@ void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
   // Check if any slot is soloed
   bool anySoloed = false;
-  for (int i = 0; i < numSlots; ++i) {
+  for (size_t i = 0; i < (size_t)numSlots; ++i) {
     if (slots[i].isLoaded() && slots[i].isSoloed()) {
       anySoloed = true;
       break;
@@ -148,7 +148,7 @@ void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   mixBuffer.clear();
 
   // Process each slot
-  for (int i = 0; i < numSlots; ++i) {
+  for (size_t i = 0; i < (size_t)numSlots; ++i) {
     if (!slots[i].isLoaded())
       continue;
 
@@ -174,127 +174,172 @@ void FreeIRAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 }
 
 bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile) {
-  // Renders a single impulse through all loaded/enabled slots with current
-  // settings (alignment, level, pan, EQ) and writes the result as a WAV file.
+  // Mixes all loaded/enabled slots' raw IR data with current settings
+  // (alignment, level, pan, delay, EQ, output gain) and writes as a WAV.
+  // Uses raw IR buffers directly instead of the Convolution engine,
+  // because JUCE's Convolution::loadImpulseResponse is asynchronous
+  // and would not be ready in time for offline rendering.
 
-  double sampleRate = exportSampleRate;
-  // Increase length to ~2 seconds to capture full tail and delay
-  int lengthSamples = (int)(sampleRate * 2.0);
+  double sr = exportSampleRate;
 
-  int blockSize = 512;
-  juce::dsp::ProcessSpec renderSpec;
-  renderSpec.sampleRate = sampleRate;
-  renderSpec.maximumBlockSize = (juce::uint32)blockSize;
-  renderSpec.numChannels = 2; // Internal processing is stereo
+  // --- Determine which slots contribute ---
+  bool anySoloed = false;
+  for (int i = 0; i < numSlots; ++i)
+    if (slots[i].isLoaded() && slots[i].isSoloed())
+      anySoloed = true;
 
-  // Prepare input: Dirac delta
-  juce::AudioBuffer<float> impulseInput(2, lengthSamples);
-  impulseInput.clear();
-  impulseInput.setSample(0, 0, 1.0f);
-  impulseInput.setSample(1, 0, 1.0f);
+  // --- Compute required output length from IR data + delays ---
+  int maxNeeded = 0;
+  for (int i = 0; i < numSlots; ++i) {
+    if (!slots[i].isLoaded())
+      continue;
+    if (anySoloed && !slots[i].isSoloed())
+      continue;
+    if (!anySoloed && slots[i].isMuted())
+      continue;
 
-  // Buffer for the mixed result
+    double ratio = sr / slots[i].getIRSampleRate();
+    int resampledLen =
+        (int)std::ceil(slots[i].getIRBuffer().getNumSamples() * ratio);
+
+    auto prefix = "Slot" + juce::String(i + 1) + "_";
+    float userDelayMs =
+        apvts.getRawParameterValue(prefix + "DelayMs")->load();
+    float totalDelayMs = userDelayMs + (float)slots[i].getAlignmentDelay();
+    int delaySamples =
+        juce::jmax(0, (int)std::ceil(totalDelayMs * 0.001 * sr));
+
+    maxNeeded = juce::jmax(maxNeeded, resampledLen + delaySamples);
+  }
+
+  if (maxNeeded == 0)
+    return false;
+
+  // Pad for EQ filter ringing (100 ms)
+  int lengthSamples = maxNeeded + (int)(sr * 0.1);
+
+  // --- Mix all active slots' raw IR data ---
   juce::AudioBuffer<float> exportMix(2, lengthSamples);
   exportMix.clear();
 
-  // Create temporary copies of slots for offline rendering
-  // We need to re-create the whole chain to process offline safely
-  bool anySoloed = false;
   for (int i = 0; i < numSlots; ++i) {
-    if (slots[i].isLoaded() && slots[i].isSoloed()) {
-      anySoloed = true;
-      break;
+    if (!slots[i].isLoaded())
+      continue;
+    if (anySoloed && !slots[i].isSoloed())
+      continue;
+    if (!anySoloed && slots[i].isMuted())
+      continue;
+
+    const auto &irBuf = slots[i].getIRBuffer();
+    int irChans = irBuf.getNumChannels();
+    int irLen = irBuf.getNumSamples();
+    double irSR = slots[i].getIRSampleRate();
+    double ratio = sr / irSR;
+    int resampledLen = (int)std::ceil(irLen * ratio);
+
+    // Build a stereo, resampled copy of this slot's IR
+    juce::AudioBuffer<float> slotIR(2, resampledLen);
+    slotIR.clear();
+
+    for (int ch = 0; ch < 2; ++ch) {
+      int srcCh = juce::jmin(ch, irChans - 1);
+      const float *src = irBuf.getReadPointer(srcCh);
+      float *dst = slotIR.getWritePointer(ch);
+
+      if (std::abs(ratio - 1.0) < 0.0001) {
+        int n = juce::jmin(irLen, resampledLen);
+        juce::FloatVectorOperations::copy(dst, src, n);
+      } else {
+        for (int j = 0; j < resampledLen; ++j) {
+          double srcPos = j / ratio;
+          int idx = (int)srcPos;
+          float frac = (float)(srcPos - idx);
+          if (idx + 1 < irLen)
+            dst[j] = src[idx] * (1.0f - frac) + src[idx + 1] * frac;
+          else if (idx < irLen)
+            dst[j] = src[idx] * (1.0f - frac);
+        }
+      }
+    }
+
+    // Read slot parameters
+    auto prefix = "Slot" + juce::String(i + 1) + "_";
+    float userDelayMs =
+        apvts.getRawParameterValue(prefix + "DelayMs")->load();
+    float totalDelayMs = userDelayMs + (float)slots[i].getAlignmentDelay();
+    int delaySamples =
+        juce::jmax(0, (int)(totalDelayMs * 0.001 * sr));
+
+    float panVal = apvts.getRawParameterValue(prefix + "Pan")->load();
+    float pan01 = panVal / 100.0f;
+    float angle =
+        (pan01 + 1.0f) * juce::MathConstants<float>::pi * 0.25f;
+    float gainL = std::cos(angle);
+    float gainR = std::sin(angle);
+
+    float levelDb =
+        apvts.getRawParameterValue(prefix + "Level")->load();
+    float levelGain = juce::Decibels::decibelsToGain(levelDb, -60.0f);
+
+    // Add to mix with delay offset, pan, and level
+    for (int j = 0; j < resampledLen; ++j) {
+      int outIdx = j + delaySamples;
+      if (outIdx >= lengthSamples)
+        break;
+      exportMix.addSample(0, outIdx,
+                          slotIR.getSample(0, j) * gainL * levelGain);
+      exportMix.addSample(1, outIdx,
+                          slotIR.getSample(1, j) * gainR * levelGain);
     }
   }
 
-  // Prepare temp slots
-  std::array<IRSlot, numSlots> exportSlots;
-  for (int i = 0; i < numSlots; ++i) {
-    exportSlots[i].init(i, &apvts);
-    exportSlots[i].prepare(renderSpec);
-    if (slots[i].isLoaded()) {
-      exportSlots[i].loadImpulseResponse(slots[i].getCurrentFile());
-      exportSlots[i].setAlignmentDelay(slots[i].getAlignmentDelay());
-    }
-  }
+  // --- Apply EQ in blocks ---
+  int blockSize = 512;
+  juce::dsp::ProcessSpec eqSpec;
+  eqSpec.sampleRate = sr;
+  eqSpec.maximumBlockSize = (juce::uint32)blockSize;
+  eqSpec.numChannels = 2;
 
-  // Temp EQ
   EQProcessor exportEQ(apvts);
-  exportEQ.prepare(renderSpec);
+  exportEQ.prepare(eqSpec);
 
-  // Process in blocks
-  int totalBlocks = (lengthSamples + blockSize - 1) / blockSize;
-
-  for (int block = 0; block < totalBlocks; ++block) {
-    int startSample = block * blockSize;
-    int samplesThisBlock = juce::jmin(blockSize, lengthSamples - startSample);
-
-    // Input block (impulse only in first block)
-    juce::AudioBuffer<float> inputBlock(2, samplesThisBlock);
-    inputBlock.clear();
-
-    if (block == 0) {
-      inputBlock.setSample(0, 0, 1.0f);
-      inputBlock.setSample(1, 0, 1.0f);
-    }
-
-    // Mix bus for this block
-    juce::AudioBuffer<float> blockMix(2, samplesThisBlock);
-    blockMix.clear();
-
-    // Process slots
-    for (int i = 0; i < numSlots; ++i) {
-      if (!exportSlots[i].isLoaded())
-        continue;
-      if (anySoloed && !exportSlots[i].isSoloed())
-        continue;
-      if (!anySoloed && exportSlots[i].isMuted())
-        continue;
-
-      exportSlots[i].process(inputBlock, blockMix);
-    }
-
-    // Apply EQ
-    exportEQ.process(blockMix);
-
-    // Apply output gain
-    float outGainDb = *apvts.getRawParameterValue("OutputGainDb");
-    float outGain = juce::Decibels::decibelsToGain(outGainDb);
-    blockMix.applyGain(outGain);
-
-    // Copy to export buffer
+  for (int pos = 0; pos < lengthSamples; pos += blockSize) {
+    int n = juce::jmin(blockSize, lengthSamples - pos);
+    juce::AudioBuffer<float> tempBlock(2, n);
     for (int ch = 0; ch < 2; ++ch)
-      exportMix.copyFrom(ch, startSample, blockMix, ch, 0, samplesThisBlock);
+      tempBlock.copyFrom(ch, 0, exportMix, ch, pos, n);
+
+    exportEQ.process(tempBlock);
+
+    for (int ch = 0; ch < 2; ++ch)
+      exportMix.copyFrom(ch, pos, tempBlock, ch, 0, n);
   }
 
-  // Apply Mono if requested
+  // --- Apply output gain ---
+  float outGainDb = apvts.getRawParameterValue("OutputGainDb")->load();
+  float outGain = juce::Decibels::decibelsToGain(outGainDb);
+  exportMix.applyGain(outGain);
+
+  // --- Mono downmix if requested ---
   int numOutputChannels = exportMono ? 1 : 2;
   if (exportMono) {
-    // Sum Stereo to Mono (L+R)/2
     exportMix.addFrom(0, 0, exportMix, 1, 0, lengthSamples);
     exportMix.applyGain(0, 0, lengthSamples, 0.5f);
-    // Copy back to R for consistency if writing stereo file (but we write mono
-    // file if numOutputChannels=1)
-    if (numOutputChannels == 1) {
-      // exportMix is 2 channels, but we only write 1. Channel 0 has (L+R)/2.
-    }
   }
 
-  // NORMALIZE
-  float maxMagnitude = exportMix.getMagnitude(0, lengthSamples);
+  // --- Normalize to -0.1 dBFS ---
+  float maxMagnitude = exportMix.getMagnitude(0, 0, lengthSamples);
   if (numOutputChannels > 1) {
-    float rightMag = exportMix.getMagnitude(1, lengthSamples);
+    float rightMag = exportMix.getMagnitude(1, 0, lengthSamples);
     maxMagnitude = juce::jmax(maxMagnitude, rightMag);
   }
 
   if (maxMagnitude > 0.00001f) {
-    float targetDb = -0.1f;
-    float targetGain = juce::Decibels::decibelsToGain(targetDb);
-    float gain = targetGain / maxMagnitude;
-    exportMix.applyGain(gain);
+    float targetGain = juce::Decibels::decibelsToGain(-0.1f);
+    exportMix.applyGain(targetGain / maxMagnitude);
   }
 
-  // Write to WAV
+  // --- Write to WAV ---
   outputFile.deleteFile();
   std::unique_ptr<juce::FileOutputStream> fileStream(
       outputFile.createOutputStream());
@@ -303,7 +348,7 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile) {
 
   juce::WavAudioFormat wavFormat;
   std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(
-      fileStream.get(), sampleRate, numOutputChannels, 24, {}, 0));
+      fileStream.get(), sr, numOutputChannels, 24, {}, 0));
 
   if (writer == nullptr)
     return false;

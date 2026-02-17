@@ -53,6 +53,18 @@ IRSlotComponent::IRSlotComponent(FreeIRAudioProcessor &processor, int slotIndex)
   };
   addAndMakeVisible(loadButton);
 
+  // Clear Button
+  clearButton.setButtonText("X");
+  // clearButton.setTooltip("Clear"); // TooltipWindow might not be set up
+  // globally, but good to have
+  clearButton.onClick = [this] {
+    proc.getIRSlot(slotID).clearImpulseResponse();
+    updateSlotDisplay();
+    if (onSlotChanged)
+      onSlotChanged();
+  };
+  addAndMakeVisible(clearButton);
+
   // 3. Slot Number Label
   slotNumLabel.setText(juce::String(slotID + 1), juce::dontSendNotification);
   slotNumLabel.setFont(juce::Font(14.0f, juce::Font::bold));
@@ -160,13 +172,18 @@ void IRSlotComponent::paint(juce::Graphics &g) {
 void IRSlotComponent::resized() {
   auto area = getLocalBounds().reduced(6);
 
-  // Top Row: < Name >
+  // Top Row: < Name > Clear
   auto topRow = area.removeFromTop(24);
 
   prevButton.setBounds(topRow.removeFromLeft(24));
-  nextButton.setBounds(topRow.removeFromRight(24));
 
-  loadButton.setBounds(topRow.reduced(4, 0)); // Center
+  clearButton.setBounds(topRow.removeFromRight(24));
+  topRow.removeFromRight(2); // Gap
+
+  nextButton.setBounds(topRow.removeFromRight(24));
+  topRow.removeFromRight(2); // Gap
+
+  loadButton.setBounds(topRow); // Center
 
   area.removeFromTop(12); // Gap
 
