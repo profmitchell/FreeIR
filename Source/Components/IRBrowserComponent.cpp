@@ -4,7 +4,7 @@
 // SidebarModel Implementation
 int IRBrowserComponent::SidebarModel::getNumRows() {
   // 1 for "Playlist", then favorites
-  return 1 + (int)owner.favoriteFolders.size();
+  return 1 + owner.favoriteFolders.size();
 }
 
 void IRBrowserComponent::SidebarModel::paintListBoxItem(int row,
@@ -22,11 +22,11 @@ void IRBrowserComponent::SidebarModel::paintListBoxItem(int row,
   if (row == 0) {
     g.drawText("My Playlist", 10, 0, w - 10, h,
                juce::Justification::centredLeft);
-    // Icon?
   } else {
     int idx = row - 1;
     if (idx < owner.favoriteFolders.size()) {
-      g.drawText(owner.favoriteFolders[idx].getFileName(), 10, 0, w - 10, h,
+      juce::File f(owner.favoriteFolders[idx]);
+      g.drawText(f.getFileName(), 10, 0, w - 10, h,
                  juce::Justification::centredLeft);
     }
   }
@@ -39,13 +39,14 @@ void IRBrowserComponent::SidebarModel::listBoxItemClicked(
   } else {
     int idx = row - 1;
     if (idx >= 0 && idx < owner.favoriteFolders.size()) {
-      owner.scanDirectory(owner.favoriteFolders[idx]);
+      owner.scanDirectory(juce::File(owner.favoriteFolders[idx]));
     }
   }
 }
 
 //==============================================================================
-IRBrowserComponent::IRBrowserComponent() : sidebarModel(*this) {
+IRBrowserComponent::IRBrowserComponent(FreeIRAudioProcessor &p)
+    : proc(p), sidebarModel(*this) {
   // Setup Sidebar
   placesLabel.setFont(juce::Font(11.0f, juce::Font::bold));
   placesLabel.setColour(juce::Label::textColourId, juce::Colour(0xffaaaaaa));
@@ -61,9 +62,10 @@ IRBrowserComponent::IRBrowserComponent() : sidebarModel(*this) {
                     [this, fc](const juce::FileChooser &chooser) {
                       auto result = chooser.getResult();
                       if (result.isDirectory()) {
-                        favoriteFolders.push_back(result);
+                        favoriteFolders.add(result.getFullPathName());
                         sidebarList.updateContent();
                         refreshFavorites();
+                        savePersistentState();
                       }
                     });
   };
@@ -87,39 +89,26 @@ IRBrowserComponent::IRBrowserComponent() : sidebarModel(*this) {
   fileList.setMultipleSelectionEnabled(true);
   addAndMakeVisible(fileList);
 
-  // Defaults
-  favoriteFolders.push_back(
-      juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-          .getChildFile("Music"));
-  favoriteFolders.push_back(
-      juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-          .getChildFile("Downloads"));
+  // Load persistence
+  loadPersistentState();
 
-  // Allow right click on file list to add to playlist
-  // Handled in list click? No, MouseEvent is passed.
+  // No default folders unless empty?
+  // User said "remove Music, downloads too".
+  // So if empty, stay empty or maybe just keep blank.
+  if (favoriteFolders.size() == 0) {
+    // Optional: Add default documents? No, user explicitly dislikes autos.
+  }
 }
 
 IRBrowserComponent::~IRBrowserComponent() {}
 
 void IRBrowserComponent::paint(juce::Graphics &g) {
-  // Glass Background for entire browser
   g.setColour(juce::Colour(0x0affffff));
   g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
-
-  // Separator line
-  int sidebarW = 100; // actually resized() defines this
-                      // g.setColour(juce::Colour(0x1affffff));
-  // g.drawVerticalLine(sidebarList.getRight() + 4, 0, (float)getHeight());
 }
 
 void IRBrowserComponent::resized() {
   auto area = getLocalBounds().reduced(8);
-
-  // Sidebar: Top 40%? Or Left column?
-  // User asked for "directories on the side". "Side" implies left column
-  // usually. Let's do a split: Left 35% sidebar, Right 65% file list? Or
-  // Top/Bottom? "on the side... and when selected display... within". Standard
-  // 2-column layout.
 
   int sidebarW = area.getWidth() * 0.35f;
   auto sidebarArea = area.removeFromLeft(sidebarW);
@@ -138,14 +127,13 @@ void IRBrowserComponent::resized() {
 }
 
 //==============================================================================
-// Main File List
 int IRBrowserComponent::getNumRows() { return (int)currentFileList.size(); }
 
 juce::var IRBrowserComponent::getDragSourceDescription(
     const juce::SparseSet<int> &selectedRows) {
   juce::Array<juce::var> files;
   for (int i = 0; i < selectedRows.size(); ++i) {
-    if (isPositiveAndBelow(selectedRows[i], currentFileList.size())) {
+    if (isPositiveAndBelow(selectedRows[i], (int)currentFileList.size())) {
       auto file = currentFileList[selectedRows[i]];
       if (file.existsAsFile())
         files.add(file.getFullPathName());
@@ -157,7 +145,7 @@ juce::var IRBrowserComponent::getDragSourceDescription(
 void IRBrowserComponent::paintListBoxItem(int row, juce::Graphics &g, int width,
                                           int height, bool rowIsSelected) {
   if (rowIsSelected) {
-    g.setColour(juce::Colour(0x3300ccff)); // Selection cyan tint
+    g.setColour(juce::Colour(0x3300ccff));
     g.fillRect(0, 0, width, height);
   }
 
@@ -187,7 +175,7 @@ void IRBrowserComponent::listBoxItemClicked(int row,
           auto selected = fileList.getSelectedRows();
           if (selected.size() > 0) {
             for (int i = 0; i < selected.size(); ++i) {
-              if (isPositiveAndBelow(selected[i], currentFileList.size()))
+              if (isPositiveAndBelow(selected[i], (int)currentFileList.size()))
                 addToPlaylist(currentFileList[selected[i]]);
             }
           } else {
@@ -227,29 +215,50 @@ void IRBrowserComponent::scanDirectory(const juce::File &dir) {
   irListLabel.setText(dir.getFileName().toUpperCase(),
                       juce::dontSendNotification);
   fileList.updateContent();
+
+  // Note: we don't save selection, just the favorite folders
 }
 
 void IRBrowserComponent::showPlaylist() {
   isShowingPlaylist = true;
   currentDirectory = juce::File();
-  currentFileList = playlistFiles;
+  // refresh playlist from paths
+  currentFileList.clear();
+  for (auto &path : playlistFiles) {
+    juce::File f(path);
+    if (f.existsAsFile())
+      currentFileList.push_back(f);
+  }
 
   irListLabel.setText("MY PLAYLIST", juce::dontSendNotification);
   fileList.updateContent();
 }
 
 void IRBrowserComponent::addToPlaylist(const juce::File &file) {
-  // Avoid duplicates?
-  for (auto &f : playlistFiles)
-    if (f == file)
-      return;
-  playlistFiles.push_back(file);
+  if (playlistFiles.contains(file.getFullPathName()))
+    return;
+
+  playlistFiles.add(file.getFullPathName());
+  savePersistentState();
+
   if (isShowingPlaylist) {
-    currentFileList = playlistFiles;
-    fileList.updateContent();
+    showPlaylist();
   }
 }
 
-void IRBrowserComponent::refreshFavorites() {
-  // TODO: Save to properties
+void IRBrowserComponent::refreshFavorites() { sidebarList.updateContent(); }
+
+void IRBrowserComponent::savePersistentState() {
+  // Current Preset? We don't track it here.
+  // Just folders and playlist.
+  juce::String lastPreset = ""; // We don't control this yet.
+  proc.getPresetManager().saveGlobalSettings(favoriteFolders, playlistFiles,
+                                             lastPreset);
+}
+
+void IRBrowserComponent::loadPersistentState() {
+  juce::String lastPreset;
+  proc.getPresetManager().loadGlobalSettings(favoriteFolders, playlistFiles,
+                                             lastPreset);
+  sidebarList.updateContent();
 }

@@ -1,10 +1,9 @@
-#pragma once
-#include <JuceHeader.h>
+#include "../PluginProcessor.h"
 
 //==============================================================================
 class IRBrowserComponent : public juce::Component, public juce::ListBoxModel {
 public:
-  IRBrowserComponent();
+  IRBrowserComponent(FreeIRAudioProcessor &p);
   ~IRBrowserComponent() override;
 
   void paint(juce::Graphics &g) override;
@@ -23,9 +22,13 @@ public:
   std::function<void(juce::File, int)> onLoadIRToSlot;
 
 private:
+  FreeIRAudioProcessor &proc;
+
   // Data
-  std::vector<juce::File> favoriteFolders;
-  std::vector<juce::File> playlistFiles;
+  juce::StringArray
+      favoriteFolders; // Change to StringArray for easier persistence
+  juce::StringArray
+      playlistFiles; // Change to StringArray for easier persistence
 
   std::vector<juce::File>
       currentFileList;         // Files in currently selected folder OR playlist
@@ -59,10 +62,14 @@ private:
   juce::ListBox fileList; // This component handles the Main List visuals
 
   // Helpers
+  // Helpers
   void scanDirectory(const juce::File &dir);
   void showPlaylist();
   void addToPlaylist(const juce::File &file);
-  void refreshFavorites();
+  void refreshFavorites(); // Updates listbox
+
+  void savePersistentState();
+  void loadPersistentState();
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IRBrowserComponent)
 };

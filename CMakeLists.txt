@@ -52,6 +52,10 @@ target_sources(FreeIR
         Source/Components/WaveformDisplay.h
         Source/Components/EQSectionComponent.cpp
         Source/Components/EQSectionComponent.h
+        Source/PresetManager.cpp
+        Source/PresetManager.h
+        Source/Components/PresetBrowserComponent.cpp
+        Source/Components/PresetBrowserComponent.h
         Source/FreeIRLookAndFeel.h
 )
 

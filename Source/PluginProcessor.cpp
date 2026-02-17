@@ -273,6 +273,25 @@ bool FreeIRAudioProcessor::exportMixedIR(const juce::File &outputFile) {
     // Sum Stereo to Mono (L+R)/2
     exportMix.addFrom(0, 0, exportMix, 1, 0, lengthSamples);
     exportMix.applyGain(0, 0, lengthSamples, 0.5f);
+    // Copy back to R for consistency if writing stereo file (but we write mono
+    // file if numOutputChannels=1)
+    if (numOutputChannels == 1) {
+      // exportMix is 2 channels, but we only write 1. Channel 0 has (L+R)/2.
+    }
+  }
+
+  // NORMALIZE
+  float maxMagnitude = exportMix.getMagnitude(0, lengthSamples);
+  if (numOutputChannels > 1) {
+    float rightMag = exportMix.getMagnitude(1, lengthSamples);
+    maxMagnitude = juce::jmax(maxMagnitude, rightMag);
+  }
+
+  if (maxMagnitude > 0.00001f) {
+    float targetDb = -0.1f;
+    float targetGain = juce::Decibels::decibelsToGain(targetDb);
+    float gain = targetGain / maxMagnitude;
+    exportMix.applyGain(gain);
   }
 
   // Write to WAV
@@ -327,6 +346,8 @@ void FreeIRAudioProcessor::getStateInformation(juce::MemoryBlock &destData) {
                       slots[i].getAlignmentDelay(), nullptr);
   }
 
+  state.setProperty("currentPresetName", currentPresetName, nullptr);
+
   std::unique_ptr<juce::XmlElement> xml(state.createXml());
   copyXmlToBinary(*xml, destData);
 }
@@ -354,6 +375,8 @@ void FreeIRAudioProcessor::setStateInformation(const void *data,
             (double)state.getProperty("irAlignDelay" + juce::String(i), 0.0);
         slots[i].setAlignmentDelay(delay);
       }
+
+      currentPresetName = state.getProperty("currentPresetName", "Init");
     }
   }
 }

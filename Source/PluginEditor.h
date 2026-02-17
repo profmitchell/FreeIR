@@ -4,6 +4,7 @@
 #include "Components/EQSectionComponent.h"
 #include "Components/IRBrowserComponent.h"
 #include "Components/IRSlotComponent.h"
+#include "Components/PresetBrowserComponent.h"
 #include "Components/WaveformDisplay.h"
 #include "FreeIRLookAndFeel.h"
 #include "PluginProcessor.h"
@@ -50,6 +51,7 @@ private:
 
   // Browser Panel
   IRBrowserComponent browser;
+  PresetBrowserComponent presetBrowser;
 
   // Waveform display
   WaveformDisplay waveformDisplay;

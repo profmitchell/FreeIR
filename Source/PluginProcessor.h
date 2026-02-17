@@ -3,6 +3,7 @@
 #include "AutoAligner.h"
 #include "EQProcessor.h"
 #include "IRSlot.h"
+#include "PresetManager.h"
 #include <JuceHeader.h>
 
 //==============================================================================
@@ -51,6 +52,7 @@ public:
   const IRSlot &getIRSlot(int index) const { return slots[index]; }
   EQProcessor &getEQ() { return eqProcessor; }
   AutoAligner &getAutoAligner() { return autoAligner; }
+  PresetManager &getPresetManager() { return presetManager; }
 
   static constexpr int numSlots = 4;
 
@@ -60,6 +62,8 @@ public:
   // Settings
   bool exportMono = true;
   double exportSampleRate = 48000.0;
+
+  juce::String currentPresetName = "Init";
 
   // Auto Align Helpers
   void cacheManualDelays();
@@ -73,6 +77,7 @@ private:
   std::array<IRSlot, numSlots> slots;
   EQProcessor eqProcessor;
   AutoAligner autoAligner;
+  PresetManager presetManager;
 
   juce::AudioBuffer<float> mixBuffer;
 

@@ -2,7 +2,8 @@
 
 //==============================================================================
 FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
-    : AudioProcessorEditor(&p), proc(p), eqSection(p) {
+    : AudioProcessorEditor(&p), proc(p), browser(p), presetBrowser(p),
+      eqSection(p) {
   setLookAndFeel(&lnf);
 
   // Responsive / Resizable setup
@@ -59,6 +60,7 @@ FreeIREditor::FreeIREditor(FreeIRAudioProcessor &p)
   };
 
   addAndMakeVisible(browser);
+  addAndMakeVisible(presetBrowser);
 
   // Title
   titleLabel.setFont(juce::Font(32.0f, juce::Font::plain));
@@ -257,6 +259,11 @@ void FreeIREditor::resized() {
 
   // Settings Button in top right
   settingsButton.setBounds(mapRect(980, 24, 80, 24));
+
+  // Preset Browser (Top Center)
+  int presetW = 300;
+  int presetH = 30;
+  presetBrowser.setBounds(mapRect((1100 - presetW) / 2, 20, presetW, presetH));
 
   // Header Knobs (Offset to accommodate browser?)
   // Browser is ~250px on Left. Layout shifts right.
